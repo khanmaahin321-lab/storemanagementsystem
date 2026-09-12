@@ -158,9 +158,10 @@ export default function SalesHistory() {
                   <img src={logoSrc} alt="Vaishnavi Marble logo" className="w-12 h-12 rounded-lg object-cover" />
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">{shopName}</h2>
-                  {shopAddress && <p className="text-sm text-slate-500">{shopAddress}</p>}
-                  {shopPhone && <p className="text-sm text-slate-500">Phone: {shopPhone}</p>}
-                  {shopGstin && <p className="text-sm text-slate-500">GSTIN: {shopGstin}</p>}
+                    {shopAddress && <p className="text-sm text-slate-500">{shopAddress}</p>}
+                    {shopPhone && <p className="text-sm text-slate-500">Phone: {shopPhone}</p>}
+                    {shopGstin && <p className="text-sm text-slate-500">GSTIN: {shopGstin}</p>}
+                  </div>
                 </div>
                 <div className="text-right">
                   <h3 className="text-lg font-bold text-slate-900">INVOICE</h3>
