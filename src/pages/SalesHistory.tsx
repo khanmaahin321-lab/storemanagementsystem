@@ -54,7 +54,31 @@ export default function SalesHistory() {
   }
 
   async function deleteSale(id: string) {
-    if (!confirm('Delete this sale? Stock will NOT be automatically reversed.')) return;
+    if (!confirm('Delete this sale? Stock will be automatically restored.')) return;
+    const { data: items } = await supabase
+      .from('sale_items')
+      .select('product_id, quantity, products(name, unit)')
+      .eq('sale_id', id);
+    if (items) {
+      for (const item of items as unknown as Array<{ product_id: string; quantity: number; products: { name: string; unit: string }[] | null }>) {
+        const { data: prod } = await supabase.from('products').select('current_stock').eq('id', item.product_id).single();
+        if (prod) {
+          const newStock = (prod as { current_stock: number }).current_stock + item.quantity;
+          await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', item.product_id);
+          await supabase.from('stock_movements').insert({
+            product_id: item.product_id,
+            movement_type: 'adjustment_in',
+            quantity: item.quantity,
+            reference_type: 'sale_delete',
+            reference_id: id,
+            reason: 'Sale deleted - stock restored',
+            balance_after: newStock,
+            notes: `Stock restored from deleted sale`,
+            user_name: 'admin',
+          });
+        }
+      }
+    }
     await supabase.from('sales').delete().eq('id', id);
     load();
   }

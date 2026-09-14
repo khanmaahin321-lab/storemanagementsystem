@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, Select, Input, Button, Badge } from '@/components/ui';
 import { formatCurrency, formatDate, getMonthName } from '@/lib/utils';
 
-type ReportType = 'sales' | 'purchases' | 'profit' | 'stock' | 'lowstock' | 'customer_outstanding' | 'supplier_outstanding' | 'gst';
+type ReportType = 'sales' | 'purchases' | 'profit' | 'stock' | 'lowstock' | 'outofstock' | 'stock_movement' | 'stock_in' | 'stock_out' | 'stock_valuation' | 'customer_outstanding' | 'supplier_outstanding' | 'gst';
 
 export default function Reports() {
   const [reportType, setReportType] = useState<ReportType>('sales');
@@ -123,6 +123,74 @@ export default function Reports() {
         ]);
         break;
       }
+      case 'outofstock': {
+        const { data: oosProducts } = await supabase.from('products').select('*, categories(name)').order('name');
+        const oosRows = ((oosProducts || []) as any[]).filter((p) => Number(p.current_stock) <= 0);
+        setData(oosRows);
+        setSummary([
+          { label: 'Out of Stock Items', value: String(oosRows.length) },
+          { label: 'Total Products', value: String((oosProducts || []).length) },
+        ]);
+        break;
+      }
+      case 'stock_valuation': {
+        const { data: valProducts } = await supabase.from('products').select('*, categories(name)').order('name');
+        const valRows = (valProducts || []) as any[];
+        setData(valRows);
+        const totalVal = valRows.reduce((s, r) => s + Number(r.current_stock) * Number(r.purchase_price), 0);
+        const totalSell = valRows.reduce((s, r) => s + Number(r.current_stock) * Number(r.selling_price), 0);
+        setSummary([
+          { label: 'Total Purchase Value', value: formatCurrency(totalVal) },
+          { label: 'Total Selling Value', value: formatCurrency(totalSell) },
+          { label: 'Total Products', value: String(valRows.length) },
+          { label: 'Potential Profit', value: formatCurrency(totalSell - totalVal) },
+        ]);
+        break;
+      }
+      case 'stock_movement': {
+        let mQuery = supabase.from('stock_movements').select('*, products(name, sku, unit), suppliers(name), customers(name)').order('created_at', { ascending: false });
+        if (fromDate) mQuery = mQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) mQuery = mQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: movements } = await mQuery;
+        const mRows = (movements || []) as any[];
+        setData(mRows);
+        const inQty = mRows.filter((m) => m.movement_type === 'in' || m.movement_type === 'adjustment_in').reduce((s, m) => s + Number(m.quantity), 0);
+        const outQty = mRows.filter((m) => m.movement_type === 'out' || m.movement_type === 'adjustment_out').reduce((s, m) => s + Number(m.quantity), 0);
+        setSummary([
+          { label: 'Total Movements', value: String(mRows.length) },
+          { label: 'Stock In', value: String(inQty) },
+          { label: 'Stock Out', value: String(outQty) },
+        ]);
+        break;
+      }
+      case 'stock_in': {
+        let siQuery = supabase.from('stock_movements').select('*, products(name, sku, unit), suppliers(name)').in('movement_type', ['in', 'adjustment_in']).order('created_at', { ascending: false });
+        if (fromDate) siQuery = siQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) siQuery = siQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: inMovements } = await siQuery;
+        const siRows = (inMovements || []) as any[];
+        setData(siRows);
+        const totalIn = siRows.reduce((s, m) => s + Number(m.quantity), 0);
+        setSummary([
+          { label: 'Total Stock In', value: String(totalIn) },
+          { label: 'Entries', value: String(siRows.length) },
+        ]);
+        break;
+      }
+      case 'stock_out': {
+        let soQuery = supabase.from('stock_movements').select('*, products(name, sku, unit), customers(name)').in('movement_type', ['out', 'adjustment_out']).order('created_at', { ascending: false });
+        if (fromDate) soQuery = soQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) soQuery = soQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: outMovements } = await soQuery;
+        const soRows = (outMovements || []) as any[];
+        setData(soRows);
+        const totalOut = soRows.reduce((s, m) => s + Number(m.quantity), 0);
+        setSummary([
+          { label: 'Total Stock Out', value: String(totalOut) },
+          { label: 'Entries', value: String(soRows.length) },
+        ]);
+        break;
+      }
       case 'customer_outstanding': {
         const { data: customers } = await supabase.from('customers').select('*').order('outstanding_balance', { ascending: false });
         const rows = ((customers || []) as any[]).filter((c) => Number(c.outstanding_balance) > 0);
@@ -169,8 +237,13 @@ export default function Reports() {
     { value: 'sales', label: 'Sales Report', icon: IndianRupee },
     { value: 'purchases', label: 'Purchase Report', icon: FileText },
     { value: 'profit', label: 'Profit & Loss', icon: TrendingUp },
-    { value: 'stock', label: 'Stock Report', icon: Package },
-    { value: 'lowstock', label: 'Low Stock Report', icon: Package },
+    { value: 'stock', label: 'Current Stock', icon: Package },
+    { value: 'stock_valuation', label: 'Stock Valuation', icon: IndianRupee },
+    { value: 'lowstock', label: 'Low Stock', icon: Package },
+    { value: 'outofstock', label: 'Out of Stock', icon: Package },
+    { value: 'stock_movement', label: 'Stock Movement', icon: TrendingUp },
+    { value: 'stock_in', label: 'Stock In Report', icon: Package },
+    { value: 'stock_out', label: 'Stock Out Report', icon: Package },
     { value: 'customer_outstanding', label: 'Customer Outstanding', icon: Users },
     { value: 'supplier_outstanding', label: 'Supplier Outstanding', icon: Truck },
     { value: 'gst', label: 'GST Report', icon: FileText },
@@ -209,7 +282,12 @@ export default function Reports() {
       case 'purchases': return ['Invoice', 'Date', 'Supplier', 'Total', 'Paid', 'Due'];
       case 'profit': return ['Product', 'Qty Sold', 'Revenue', 'Cost', 'Profit'];
       case 'stock': return ['Product', 'SKU', 'Category', 'Stock', 'Unit', 'Value'];
+      case 'stock_valuation': return ['Product', 'SKU', 'Category', 'Stock', 'Unit', 'Purchase Value', 'Sell Value'];
       case 'lowstock': return ['Product', 'SKU', 'Current', 'Minimum', 'Unit'];
+      case 'outofstock': return ['Product', 'SKU', 'Category', 'Unit'];
+      case 'stock_movement': return ['Date', 'Product', 'Type', 'Qty', 'Unit', 'Reason', 'User'];
+      case 'stock_in': return ['Date', 'Product', 'Qty', 'Unit', 'Supplier', 'Reference'];
+      case 'stock_out': return ['Date', 'Product', 'Qty', 'Unit', 'Customer', 'Reference'];
       case 'customer_outstanding': return ['Name', 'Mobile', 'Outstanding', 'Total Purchases'];
       case 'supplier_outstanding': return ['Name', 'Mobile', 'Outstanding'];
       case 'gst': return ['Invoice', 'Date', 'Subtotal', 'GST', 'Total'];
@@ -265,6 +343,53 @@ export default function Reports() {
           <td className="px-4 py-3 text-right text-red-600">{row.current_stock}</td>
           <td className="px-4 py-3 text-right">{row.minimum_stock}</td>
           <td className="px-4 py-3 text-slate-500">{row.unit}</td>
+        </>
+      );
+      case 'outofstock': return (
+        <>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+          <td className="px-4 py-3 text-slate-600">{row.sku}</td>
+          <td className="px-4 py-3 text-slate-600">{row.categories?.name || '-'}</td>
+          <td className="px-4 py-3 text-slate-500">{row.unit}</td>
+        </>
+      );
+      case 'stock_valuation': return (
+        <>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.name}</td>
+          <td className="px-4 py-3 text-slate-600">{row.sku}</td>
+          <td className="px-4 py-3 text-slate-600">{row.categories?.name || '-'}</td>
+          <td className="px-4 py-3 text-right">{row.current_stock}</td>
+          <td className="px-4 py-3 text-slate-500">{row.unit}</td>
+          <td className="px-4 py-3 text-right font-medium">{formatCurrency(row.current_stock * row.purchase_price)}</td>
+          <td className="px-4 py-3 text-right font-medium text-green-600">{formatCurrency(row.current_stock * row.selling_price)}</td>
+        </>
+      );
+      case 'stock_movement': return (
+        <>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.created_at)}</td>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.products?.name || '-'}</td>
+          <td className="px-4 py-3"><Badge color={row.movement_type === 'in' ? 'green' : row.movement_type === 'out' ? 'red' : 'blue'}>{row.movement_type}</Badge></td>
+          <td className="px-4 py-3 text-right font-medium">{row.quantity} {row.products?.unit || ''}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reason || row.notes || '-'}</td>
+          <td className="px-4 py-3 text-slate-500">{row.user_name || 'admin'}</td>
+        </>
+      );
+      case 'stock_in': return (
+        <>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.created_at)}</td>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.products?.name || '-'}</td>
+          <td className="px-4 py-3 text-right font-medium">{row.quantity} {row.products?.unit || ''}</td>
+          <td className="px-4 py-3 text-slate-500">{row.suppliers?.name || '-'}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reference_number || row.reference_type || '-'}</td>
+        </>
+      );
+      case 'stock_out': return (
+        <>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.created_at)}</td>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.products?.name || '-'}</td>
+          <td className="px-4 py-3 text-right font-medium">{row.quantity} {row.products?.unit || ''}</td>
+          <td className="px-4 py-3 text-slate-500">{row.customers?.name || '-'}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reference_number || row.reference_type || '-'}</td>
         </>
       );
       case 'customer_outstanding': return (

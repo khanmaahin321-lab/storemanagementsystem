@@ -36,6 +36,11 @@ type DashboardData = {
     amount_paid: number;
   }[];
   lowStockProducts: { id: string; name: string; current_stock: number; minimum_stock: number; unit: string }[];
+  stockInToday: number;
+  stockOutToday: number;
+  adjustmentsToday: number;
+  totalStockValue: number;
+  outOfStockCount: number;
 };
 
 export default function Dashboard() {
@@ -50,7 +55,7 @@ export default function Dashboard() {
     const today = new Date().toISOString().split('T')[0];
     const startOfMonth = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
 
-    const [salesToday, purchasesToday, products, customers, suppliers, recentSales, monthlySalesRes, lowStockRes, expensesToday, categories, allSales, allPurchases, allExpenses] =
+    const [salesToday, purchasesToday, products, customers, suppliers, recentSales, monthlySalesRes, lowStockRes, expensesToday, categories, allSales, allPurchases, allExpenses, stockMovementsToday] =
       await Promise.all([
         supabase.from('sales').select('total_amount, amount_paid, payment_method').eq('sale_date', today),
         supabase.from('purchases').select('total_amount, amount_paid, payment_method').eq('purchase_date', today),
@@ -75,6 +80,7 @@ export default function Dashboard() {
         supabase.from('sales').select('amount_paid, payment_method'),
         supabase.from('purchases').select('amount_paid, payment_method'),
         supabase.from('expenses').select('amount, payment_method'),
+        supabase.from('stock_movements').select('movement_type, quantity').gte('created_at', today + 'T00:00:00'),
       ]);
 
     const todaySalesAmount = (salesToday.data || []).reduce((s, r) => s + Number(r.total_amount), 0);
@@ -107,8 +113,15 @@ export default function Dashboard() {
     const customerDues = (customers.data || []).reduce((s, r) => s + Number(r.outstanding_balance), 0);
     const supplierDues = (suppliers.data || []).reduce((s, r) => s + Number(r.outstanding_balance), 0);
     const lowStockProducts = (products.data || []).filter(
-      (p) => Number(p.current_stock) <= Number(p.minimum_stock) && Number(p.minimum_stock) > 0,
+      (p) => Number(p.current_stock) <= Number(p.minimum_stock) && Number(p.minimum_stock) > 0 && Number(p.current_stock) > 0,
     );
+    const outOfStockProducts = (products.data || []).filter((p) => Number(p.current_stock) <= 0);
+    const totalStockValue = (products.data || []).reduce((s, p) => s + Number(p.current_stock) * Number(p.purchase_price), 0);
+
+    const todayMovements = (stockMovementsToday.data || []) as Array<{ movement_type: string; quantity: number }>;
+    const stockInToday = todayMovements.filter((m) => m.movement_type === 'in' || m.movement_type === 'adjustment_in').reduce((s, m) => s + Number(m.quantity), 0);
+    const stockOutToday = todayMovements.filter((m) => m.movement_type === 'out' || m.movement_type === 'adjustment_out').reduce((s, m) => s + Number(m.quantity), 0);
+    const adjustmentsToday = todayMovements.filter((m) => m.movement_type === 'adjustment_in' || m.movement_type === 'adjustment_out').length;
 
     // Monthly sales aggregation
     const monthMap = new Map<string, number>();
@@ -137,6 +150,11 @@ export default function Dashboard() {
       monthlySales,
       recentSales: (recentSales.data || []) as DashboardData['recentSales'],
       lowStockProducts: lowStockProducts.slice(0, 5),
+      stockInToday,
+      stockOutToday,
+      adjustmentsToday,
+      totalStockValue,
+      outOfStockCount: outOfStockProducts.length,
     });
     setLoading(false);
   }
@@ -218,6 +236,34 @@ export default function Dashboard() {
       {/* Tertiary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
+          label="Stock Value"
+          value={formatCurrency(data!.totalStockValue)}
+          icon={<Package className="w-6 h-6" />}
+          color="bg-emerald-500"
+        />
+        <StatCard
+          label="Stock In Today"
+          value={String(data!.stockInToday)}
+          icon={<TrendingUp className="w-6 h-6" />}
+          color="bg-green-500"
+        />
+        <StatCard
+          label="Stock Out Today"
+          value={String(data!.stockOutToday)}
+          icon={<TrendingDown className="w-6 h-6" />}
+          color="bg-rose-500"
+        />
+        <StatCard
+          label="Out of Stock"
+          value={String(data!.outOfStockCount)}
+          icon={<AlertTriangle className="w-6 h-6" />}
+          color="bg-red-500"
+        />
+      </div>
+
+      {/* Quaternary stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
           label="Customer Dues"
           value={formatCurrency(data!.customerDues)}
           icon={<Users className="w-6 h-6" />}
@@ -236,10 +282,10 @@ export default function Dashboard() {
           color="bg-teal-500"
         />
         <StatCard
-          label="Total Products"
-          value={String(data!.totalProducts)}
+          label="Stock Adjustments Today"
+          value={String(data!.adjustmentsToday)}
           icon={<Package className="w-6 h-6" />}
-          color="bg-purple-500"
+          color="bg-blue-500"
         />
       </div>
 

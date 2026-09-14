@@ -151,6 +151,13 @@ export type StockMovement = {
   quantity: number;
   reference_type: string | null;
   reference_id: string | null;
+  reference_number: string | null;
+  reason: string | null;
+  user_name: string | null;
+  supplier_id: string | null;
+  customer_id: string | null;
+  unit_cost: number;
+  balance_after: number;
   notes: string | null;
   created_at: string;
 };

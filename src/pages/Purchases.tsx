@@ -174,7 +174,31 @@ export default function Purchases() {
   }
 
   async function removePurchase(id: string) {
-    if (!confirm('Delete this purchase? Stock will not be automatically reversed.')) return;
+    if (!confirm('Delete this purchase? Stock will be automatically reversed.')) return;
+    const { data: items } = await supabase
+      .from('purchase_items')
+      .select('product_id, quantity, products(name, unit)')
+      .eq('purchase_id', id);
+    if (items) {
+      for (const item of items as unknown as Array<{ product_id: string; quantity: number; products: { name: string; unit: string }[] | null }>) {
+        const { data: prod } = await supabase.from('products').select('current_stock').eq('id', item.product_id).single();
+        if (prod) {
+          const newStock = Math.max(0, (prod as { current_stock: number }).current_stock - item.quantity);
+          await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', item.product_id);
+          await supabase.from('stock_movements').insert({
+            product_id: item.product_id,
+            movement_type: 'adjustment_out',
+            quantity: item.quantity,
+            reference_type: 'purchase_delete',
+            reference_id: id,
+            reason: 'Purchase deleted - stock reversed',
+            balance_after: newStock,
+            notes: `Stock reversed from deleted purchase`,
+            user_name: 'admin',
+          });
+        }
+      }
+    }
     await supabase.from('purchases').delete().eq('id', id);
     loadPurchases();
   }

@@ -6,11 +6,16 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  Eye,
+  Sliders,
+  TrendingUp,
+  TrendingDown,
+  History,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { Product, Category, Supplier } from '@/lib/supabase';
+import type { Product, Category, Supplier, StockMovement } from '@/lib/supabase';
 import { Card, Modal, Input, Select, Textarea, Button, Badge, EmptyState } from '@/components/ui';
-import { formatCurrency, generateSKU } from '@/lib/utils';
+import { formatCurrency, generateSKU, formatDate } from '@/lib/utils';
 
 type ProductWithRelations = Product & {
   categories?: Category | null;
@@ -27,6 +32,10 @@ export default function Products() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Partial<Product>>({});
+  const [stockModal, setStockModal] = useState(false);
+  const [stockProduct, setStockProduct] = useState<ProductWithRelations | null>(null);
+  const [stockMovements, setStockMovements] = useState<(StockMovement & { products?: { name: string; unit: string } | null })[]>([]);
+  const [adjustForm, setAdjustForm] = useState({ type: 'adjustment_in', quantity: 0, reason: 'Physical Stock Correction', notes: '' });
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -100,6 +109,44 @@ export default function Products() {
   async function remove(id: string) {
     if (!confirm('Delete this product? This cannot be undone.')) return;
     await supabase.from('products').delete().eq('id', id);
+    loadProducts();
+  }
+
+  async function openStockDetails(product: ProductWithRelations) {
+    setStockProduct(product);
+    setStockModal(true);
+    setAdjustForm({ type: 'adjustment_in', quantity: 0, reason: 'Physical Stock Correction', notes: '' });
+    const { data } = await supabase
+      .from('stock_movements')
+      .select('*, products(name, unit)')
+      .eq('product_id', product.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    setStockMovements((data || []) as (StockMovement & { products?: { name: string; unit: string } | null })[]);
+  }
+
+  async function saveStockAdjust() {
+    if (!stockProduct || adjustForm.quantity <= 0) return;
+    const isAdd = adjustForm.type === 'adjustment_in';
+    const qty = isAdd ? adjustForm.quantity : -adjustForm.quantity;
+    const newStock = stockProduct.current_stock + qty;
+    if (newStock < 0) {
+      alert('Stock cannot go negative. Current stock is ' + stockProduct.current_stock + ' ' + stockProduct.unit);
+      return;
+    }
+    await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', stockProduct.id);
+    await supabase.from('stock_movements').insert({
+      product_id: stockProduct.id,
+      movement_type: adjustForm.type,
+      quantity: adjustForm.quantity,
+      reference_type: 'adjustment',
+      reason: adjustForm.reason,
+      notes: adjustForm.notes || adjustForm.reason,
+      balance_after: newStock,
+      unit_cost: stockProduct.purchase_price,
+      user_name: 'admin',
+    });
+    setStockModal(false);
     loadProducts();
   }
 
@@ -188,6 +235,9 @@ export default function Products() {
                         {p.is_active ? <Badge color="green">Active</Badge> : <Badge color="slate">Inactive</Badge>}
                       </td>
                       <td className="px-4 py-3 text-right">
+                        <button onClick={() => openStockDetails(p)} className="text-slate-400 hover:text-blue-600 p-1" title="Stock Details">
+                          <Eye className="w-4 h-4" />
+                        </button>
                         <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-amber-600 p-1">
                           <Pencil className="w-4 h-4" />
                         </button>
@@ -229,6 +279,9 @@ export default function Products() {
             <option value="piece">piece</option>
             <option value="box">box</option>
             <option value="kg">kg</option>
+            <option value="bag">bag</option>
+            <option value="set">set</option>
+            <option value="packet">packet</option>
           </Select>
           <Input label="Purchase Price" type="number" value={form.purchase_price ?? ''} onChange={(e) => setForm({ ...form, purchase_price: Number(e.target.value) })} />
           <Input label="Selling Price" type="number" value={form.selling_price ?? ''} onChange={(e) => setForm({ ...form, selling_price: Number(e.target.value) })} />
@@ -251,6 +304,70 @@ export default function Products() {
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={save}>{editing ? 'Update' : 'Add'} Product</Button>
         </div>
+      </Modal>
+
+      {/* Stock Details Modal */}
+      <Modal open={stockModal} onClose={() => setStockModal(false)} title="Stock Details" size="lg">
+        {stockProduct && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-slate-50 rounded-lg">
+              <div><p className="text-xs text-slate-400">Product</p><p className="font-medium text-slate-900 text-sm">{stockProduct.name}</p></div>
+              <div><p className="text-xs text-slate-400">Category</p><p className="font-medium text-slate-900 text-sm">{stockProduct.categories?.name || '-'}</p></div>
+              <div><p className="text-xs text-slate-400">Unit</p><p className="font-medium text-slate-900 text-sm">{stockProduct.unit}</p></div>
+              <div><p className="text-xs text-slate-400">Opening Stock</p><p className="font-medium text-slate-900">{stockProduct.opening_stock}</p></div>
+              <div><p className="text-xs text-slate-400">Current Stock</p><p className="font-bold text-blue-600">{stockProduct.current_stock}</p></div>
+              <div><p className="text-xs text-slate-400">Min Stock</p><p className="font-medium text-slate-900">{stockProduct.minimum_stock}</p></div>
+              <div><p className="text-xs text-slate-400">Purchase Price</p><p className="font-medium text-slate-900">{formatCurrency(stockProduct.purchase_price)}</p></div>
+              <div><p className="text-xs text-slate-400">Selling Price</p><p className="font-medium text-slate-900">{formatCurrency(stockProduct.selling_price)}</p></div>
+              <div><p className="text-xs text-slate-400">Stock Value</p><p className="font-medium text-green-600">{formatCurrency(stockProduct.current_stock * stockProduct.purchase_price)}</p></div>
+            </div>
+
+            {/* Quick adjust form */}
+            <div className="p-4 border border-slate-200 rounded-lg space-y-3">
+              <h4 className="text-sm font-bold text-slate-900">Stock Adjustment</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Select label="Type" value={adjustForm.type} onChange={(e) => setAdjustForm({ ...adjustForm, type: e.target.value })}>
+                  <option value="adjustment_in">Add Stock (+)</option>
+                  <option value="adjustment_out">Remove Stock (-)</option>
+                </Select>
+                <Input label="Quantity" type="number" value={adjustForm.quantity || ''} onChange={(e) => setAdjustForm({ ...adjustForm, quantity: Number(e.target.value) })} />
+                <Select label="Reason" value={adjustForm.reason} onChange={(e) => setAdjustForm({ ...adjustForm, reason: e.target.value })}>
+                  <option>Damaged</option><option>Broken</option><option>Missing</option>
+                  <option>Extra Stock Found</option><option>Wrong Entry</option>
+                  <option>Physical Stock Correction</option><option>Other</option>
+                </Select>
+              </div>
+              <Textarea label="Notes" rows={2} value={adjustForm.notes} onChange={(e) => setAdjustForm({ ...adjustForm, notes: e.target.value })} />
+              <Button onClick={saveStockAdjust}><Sliders className="w-4 h-4 inline mr-1" />Save Adjustment</Button>
+            </div>
+
+            {/* Movement history */}
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 mb-2"><History className="w-4 h-4 inline mr-1" />Stock Movement History</h4>
+              {stockMovements.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">No movements yet</p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600 sticky top-0">
+                      <tr><th className="text-left px-3 py-2 font-medium">Date</th><th className="text-left px-3 py-2 font-medium">Type</th><th className="text-right px-3 py-2 font-medium">Qty</th><th className="text-left px-3 py-2 font-medium">Reason</th></tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {stockMovements.map((m) => (
+                        <tr key={m.id}>
+                          <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{formatDate(m.created_at)}</td>
+                          <td className="px-3 py-2"><Badge color={m.movement_type === 'in' ? 'green' : m.movement_type === 'out' ? 'red' : 'blue'}>{m.movement_type}</Badge></td>
+                          <td className="px-3 py-2 text-right font-medium">{m.quantity}</td>
+                          <td className="px-3 py-2 text-slate-500">{m.reason || m.notes || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
