@@ -188,6 +188,76 @@ export type Settings = {
   purchase_counter: number;
   default_gst_percent: number;
   currency_symbol: string;
+  sales_return_prefix: string;
+  sales_return_counter: number;
+  purchase_return_prefix: string;
+  purchase_return_counter: number;
   created_at: string;
   updated_at: string;
+};
+
+export type SalesReturn = {
+  id: string;
+  return_number: string;
+  sale_id: string | null;
+  customer_id: string | null;
+  return_date: string;
+  total_amount: number;
+  notes: string | null;
+  created_at: string;
+};
+
+export type SalesReturnItem = {
+  id: string;
+  return_id: string;
+  product_id: string;
+  sale_item_id: string | null;
+  quantity: number;
+  rate: number;
+  total: number;
+  reason: string | null;
+  created_at: string;
+};
+
+export type PurchaseReturn = {
+  id: string;
+  return_number: string;
+  purchase_id: string | null;
+  supplier_id: string | null;
+  return_date: string;
+  total_amount: number;
+  notes: string | null;
+  created_at: string;
+};
+
+export type PurchaseReturnItem = {
+  id: string;
+  return_id: string;
+  product_id: string;
+  purchase_item_id: string | null;
+  quantity: number;
+  rate: number;
+  total: number;
+  reason: string | null;
+  created_at: string;
+};
+
+export type PhysicalStockCheck = {
+  id: string;
+  check_date: string;
+  notes: string | null;
+  status: string;
+  created_at: string;
+};
+
+export type PhysicalStockCheckItem = {
+  id: string;
+  check_id: string;
+  product_id: string;
+  system_stock: number;
+  physical_stock: number;
+  difference: number;
+  reason: string | null;
+  applied: boolean;
+  created_at: string;
 };

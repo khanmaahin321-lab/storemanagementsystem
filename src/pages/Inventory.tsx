@@ -12,11 +12,14 @@ import {
   TrendingUp,
   TrendingDown,
   Sliders,
-  Filter,
   X,
+  ClipboardCheck,
+  Undo2,
+  RotateCcw,
+  Printer,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import type { Product, StockMovement, Supplier, Customer } from '@/lib/supabase';
+import type { Product, StockMovement, Supplier, Customer, Sale, Purchase, Settings as SettingsType } from '@/lib/supabase';
 import { Card, Modal, Input, Select, Textarea, Button, Badge, EmptyState } from '@/components/ui';
 import { formatCurrency, formatDate } from '@/lib/utils';
 
@@ -37,37 +40,60 @@ const ADJUSTMENT_REASONS = [
   'Other',
 ];
 
-const MOVEMENT_TYPE_LABELS: Record<string, string> = {
-  in: 'Stock In',
-  out: 'Stock Out',
-  adjustment_in: 'Adjustment +',
-  adjustment_out: 'Adjustment -',
-  opening: 'Opening Stock',
-  damage: 'Damaged',
-};
+const RETURN_REASONS = [
+  'Defective',
+  'Wrong Item',
+  'Damaged in Transit',
+  'Customer Return',
+  'Quality Issue',
+  'Wrong Quantity',
+  'Other',
+];
+
+type TabId = 'stock' | 'movements' | 'physical' | 'sales_return' | 'purchase_return';
 
 export default function Inventory() {
   const [products, setProducts] = useState<ProductWithCategory[]>([]);
   const [movements, setMovements] = useState<MovementWithDetails[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [sales, setSales] = useState<(Sale & { customers: { name: string } | null })[]>([]);
+  const [purchases, setPurchases] = useState<(Purchase & { suppliers: { name: string } | null })[]>([]);
+  const [settings, setSettings] = useState<SettingsType | null>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<'stock' | 'movements' | 'adjust' | 'stockin'>('stock');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+  const [tab, setTab] = useState<TabId>('stock');
 
-  // Modals
+  // Adjust modal
   const [adjustModal, setAdjustModal] = useState(false);
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
   const [adjustForm, setAdjustForm] = useState({ type: 'adjustment_in', quantity: 0, reason: 'Physical Stock Correction', notes: '' });
 
+  // Stock In modal
   const [stockInModal, setStockInModal] = useState(false);
   const [stockInProduct, setStockInProduct] = useState<Product | null>(null);
   const [stockInForm, setStockInForm] = useState({ quantity: 0, purchasePrice: 0, supplierId: '', purchaseDate: new Date().toISOString().split('T')[0], referenceNumber: '', notes: '' });
 
-  // Filters for movements
+  // Movement filters
   const [filterProduct, setFilterProduct] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterDate, setFilterDate] = useState('');
+
+  // Physical stock check
+  const [physicalItems, setPhysicalItems] = useState<Array<{ product_id: string; product: ProductWithCategory; system_stock: number; physical_stock: number; difference: number; reason: string }>>([]);
+  const [physicalNotes, setPhysicalNotes] = useState('');
+
+  // Sales return
+  const [srSaleId, setSrSaleId] = useState('');
+  const [srItems, setSrItems] = useState<Array<{ product_id: string; product_name: string; unit: string; max_qty: number; quantity: number; rate: number; reason: string }>>([]);
+  const [srNotes, setSrNotes] = useState('');
+
+  // Purchase return
+  const [prPurchaseId, setPrPurchaseId] = useState('');
+  const [prItems, setPrItems] = useState<Array<{ product_id: string; product_name: string; unit: string; max_qty: number; quantity: number; rate: number; reason: string }>>([]);
+  const [prNotes, setPrNotes] = useState('');
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -105,11 +131,21 @@ export default function Inventory() {
     supabase.from('customers').select('*').order('name').then(({ data }) => {
       if (data) setCustomers(data as Customer[]);
     });
+    supabase.from('settings').select('*').maybeSingle().then(({ data }) => {
+      if (data) setSettings(data as SettingsType);
+    });
+    supabase.from('sales').select('*, customers(name)').order('created_at', { ascending: false }).limit(50).then(({ data }) => {
+      setSales((data || []) as (Sale & { customers: { name: string } | null })[]);
+    });
+    supabase.from('purchases').select('*, suppliers(name)').order('created_at', { ascending: false }).limit(50).then(({ data }) => {
+      setPurchases((data || []) as (Purchase & { suppliers: { name: string } | null })[]);
+    });
   }, []);
 
   useEffect(() => {
-    if (tab === 'stock' || tab === 'adjust' || tab === 'stockin') loadProducts();
-    else loadMovements();
+    if (tab === 'stock' || tab === 'physical' || tab === 'adjust' || tab === 'stockin') loadProducts();
+    else if (tab === 'movements') loadMovements();
+    else if (tab === 'sales_return' || tab === 'purchase_return') loadProducts();
   }, [tab, loadProducts, loadMovements]);
 
   function openAdjust(product: Product) {
@@ -189,23 +225,307 @@ export default function Inventory() {
     loadProducts();
   }
 
+  // Physical stock check: initialize with all products
+  function initPhysicalCheck() {
+    setPhysicalItems(products.map((p) => ({
+      product_id: p.id,
+      product: p,
+      system_stock: p.current_stock,
+      physical_stock: p.current_stock,
+      difference: 0,
+      reason: '',
+    })));
+  }
+
+  function updatePhysicalQty(productId: string, qty: number) {
+    setPhysicalItems(items => items.map(it => {
+      if (it.product_id === productId) {
+        const diff = qty - it.system_stock;
+        return { ...it, physical_stock: qty, difference: diff };
+      }
+      return it;
+    }));
+  }
+
+  async function applyPhysicalAdjustments() {
+    const itemsToApply = physicalItems.filter(it => it.difference !== 0);
+    if (itemsToApply.length === 0) {
+      alert('No differences to apply.');
+      return;
+    }
+    if (!confirm(`Apply ${itemsToApply.length} stock adjustment(s) from physical count?`)) return;
+
+    const checkDate = new Date().toISOString().split('T')[0];
+    const { data: check } = await supabase.from('physical_stock_checks').insert({
+      check_date: checkDate,
+      notes: physicalNotes,
+      status: 'completed',
+    }).select('*').single();
+
+    const checkId = check?.id;
+    const checkItems: Array<{ check_id: string; product_id: string; system_stock: number; physical_stock: number; difference: number; reason: string; applied: boolean }> = [];
+
+    for (const it of itemsToApply) {
+      const newStock = it.physical_stock;
+      const isAdd = it.difference > 0;
+      await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', it.product_id);
+      await supabase.from('stock_movements').insert({
+        product_id: it.product_id,
+        movement_type: isAdd ? 'adjustment_in' : 'adjustment_out',
+        quantity: Math.abs(it.difference),
+        reference_type: 'physical_check',
+        reference_id: checkId || null,
+        reason: it.reason || 'Physical Stock Correction',
+        notes: `Physical stock check: system=${it.system_stock}, actual=${it.physical_stock}`,
+        balance_after: newStock,
+        unit_cost: it.product.purchase_price,
+        user_name: 'admin',
+      });
+      if (checkId) {
+        checkItems.push({
+          check_id: checkId,
+          product_id: it.product_id,
+          system_stock: it.system_stock,
+          physical_stock: it.physical_stock,
+          difference: it.difference,
+          reason: it.reason || '',
+          applied: true,
+        });
+      }
+    }
+
+    if (checkId && checkItems.length > 0) {
+      await supabase.from('physical_stock_check_items').insert(checkItems);
+    }
+
+    alert(`${itemsToApply.length} adjustment(s) applied successfully.`);
+    setPhysicalNotes('');
+    setPhysicalItems([]);
+    loadProducts();
+  }
+
+  // Sales return: load sale items when sale selected
+  async function onSrSaleChange(saleId: string) {
+    setSrSaleId(saleId);
+    if (!saleId) {
+      setSrItems([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('sale_items')
+      .select('*, products(name, unit)')
+      .eq('sale_id', saleId);
+    setSrItems((data || []).map((it: Record<string, unknown>) => ({
+      product_id: it.product_id as string,
+      product_name: (it.products as { name: string; unit: string })?.name || 'Unknown',
+      unit: (it.products as { name: string; unit: string })?.unit || '',
+      max_qty: it.quantity as number,
+      quantity: 0,
+      rate: it.rate as number,
+      reason: 'Customer Return',
+    })));
+  }
+
+  async function saveSalesReturn() {
+    const itemsToReturn = srItems.filter(it => it.quantity > 0);
+    if (itemsToReturn.length === 0) {
+      alert('Enter at least one quantity to return.');
+      return;
+    }
+
+    const sale = sales.find(s => s.id === srSaleId);
+    const prefix = settings?.sales_return_prefix || 'SR';
+    const counter = settings?.sales_return_counter || 1;
+    const returnNumber = `${prefix}-${String(counter).padStart(5, '0')}`;
+
+    const totalAmount = itemsToReturn.reduce((s, it) => s + it.quantity * it.rate, 0);
+
+    const { data: returnRec } = await supabase.from('sales_returns').insert({
+      return_number: returnNumber,
+      sale_id: srSaleId || null,
+      customer_id: sale?.customer_id || null,
+      return_date: new Date().toISOString().split('T')[0],
+      total_amount: totalAmount,
+      notes: srNotes,
+    }).select('*').single();
+
+    if (!returnRec) return;
+    const returnId = (returnRec as { id: string }).id;
+
+    for (const it of itemsToReturn) {
+      if (it.quantity > it.max_qty) {
+        alert(`Cannot return more than sold quantity for ${it.product_name}. Max: ${it.max_qty}`);
+        return;
+      }
+      const { data: prod } = await supabase.from('products').select('current_stock').eq('id', it.product_id).single();
+      const currentStock = (prod as { current_stock: number })?.current_stock || 0;
+      const newStock = currentStock + it.quantity;
+
+      await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', it.product_id);
+      await supabase.from('stock_movements').insert({
+        product_id: it.product_id,
+        movement_type: 'sales_return',
+        quantity: it.quantity,
+        reference_type: 'sales_return',
+        reference_id: returnId,
+        reference_number: returnNumber,
+        customer_id: sale?.customer_id || null,
+        reason: it.reason,
+        balance_after: newStock,
+        unit_cost: it.rate,
+        notes: `Sales return ${returnNumber}`,
+        user_name: 'admin',
+      });
+      await supabase.from('sales_return_items').insert({
+        return_id: returnId,
+        product_id: it.product_id,
+        quantity: it.quantity,
+        rate: it.rate,
+        total: it.quantity * it.rate,
+        reason: it.reason,
+      });
+    }
+
+    if (settings) {
+      await supabase.from('settings').update({ sales_return_counter: counter + 1 }).eq('id', settings.id);
+    }
+
+    alert(`Sales return ${returnNumber} saved. Stock restored.`);
+    setSrSaleId('');
+    setSrItems([]);
+    setSrNotes('');
+    loadProducts();
+  }
+
+  // Purchase return
+  async function onPrPurchaseChange(purchaseId: string) {
+    setPrPurchaseId(purchaseId);
+    if (!purchaseId) {
+      setPrItems([]);
+      return;
+    }
+    const { data } = await supabase
+      .from('purchase_items')
+      .select('*, products(name, unit)')
+      .eq('purchase_id', purchaseId);
+    setPrItems((data || []).map((it: Record<string, unknown>) => ({
+      product_id: it.product_id as string,
+      product_name: (it.products as { name: string; unit: string })?.name || 'Unknown',
+      unit: (it.products as { name: string; unit: string })?.unit || '',
+      max_qty: it.quantity as number,
+      quantity: 0,
+      rate: it.rate as number,
+      reason: 'Quality Issue',
+    })));
+  }
+
+  async function savePurchaseReturn() {
+    const itemsToReturn = prItems.filter(it => it.quantity > 0);
+    if (itemsToReturn.length === 0) {
+      alert('Enter at least one quantity to return.');
+      return;
+    }
+
+    const purchase = purchases.find(p => p.id === prPurchaseId);
+    const prefix = settings?.purchase_return_prefix || 'PR';
+    const counter = settings?.purchase_return_counter || 1;
+    const returnNumber = `${prefix}-${String(counter).padStart(5, '0')}`;
+
+    const totalAmount = itemsToReturn.reduce((s, it) => s + it.quantity * it.rate, 0);
+
+    const { data: returnRec } = await supabase.from('purchase_returns').insert({
+      return_number: returnNumber,
+      purchase_id: prPurchaseId || null,
+      supplier_id: purchase?.supplier_id || null,
+      return_date: new Date().toISOString().split('T')[0],
+      total_amount: totalAmount,
+      notes: prNotes,
+    }).select('*').single();
+
+    if (!returnRec) return;
+    const returnId = (returnRec as { id: string }).id;
+
+    for (const it of itemsToReturn) {
+      if (it.quantity > it.max_qty) {
+        alert(`Cannot return more than purchased quantity for ${it.product_name}. Max: ${it.max_qty}`);
+        return;
+      }
+      const { data: prod } = await supabase.from('products').select('current_stock').eq('id', it.product_id).single();
+      const currentStock = (prod as { current_stock: number })?.current_stock || 0;
+      const newStock = Math.max(0, currentStock - it.quantity);
+
+      await supabase.from('products').update({ current_stock: newStock, updated_at: new Date().toISOString() }).eq('id', it.product_id);
+      await supabase.from('stock_movements').insert({
+        product_id: it.product_id,
+        movement_type: 'purchase_return',
+        quantity: it.quantity,
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_number: returnNumber,
+        supplier_id: purchase?.supplier_id || null,
+        reason: it.reason,
+        balance_after: newStock,
+        unit_cost: it.rate,
+        notes: `Purchase return ${returnNumber}`,
+        user_name: 'admin',
+      });
+      await supabase.from('purchase_return_items').insert({
+        return_id: returnId,
+        product_id: it.product_id,
+        quantity: it.quantity,
+        rate: it.rate,
+        total: it.quantity * it.rate,
+        reason: it.reason,
+      });
+    }
+
+    if (settings) {
+      await supabase.from('settings').update({ purchase_return_counter: counter + 1 }).eq('id', settings.id);
+    }
+
+    alert(`Purchase return ${returnNumber} saved. Stock deducted.`);
+    setPrPurchaseId('');
+    setPrItems([]);
+    setPrNotes('');
+    loadProducts();
+  }
+
+  function printTable() {
+    window.print();
+  }
+
+  const filteredProducts = products.filter(p => {
+    if (filterCategory && p.categories?.name !== filterCategory) return false;
+    if (filterStatus === 'low' && !(p.current_stock <= p.minimum_stock && p.minimum_stock > 0 && p.current_stock > 0)) return false;
+    if (filterStatus === 'out' && p.current_stock > 0) return false;
+    if (filterStatus === 'in' && (p.current_stock <= 0 || (p.current_stock <= p.minimum_stock && p.minimum_stock > 0))) return false;
+    return true;
+  });
+
   const totalStockValue = products.reduce((s, p) => s + p.current_stock * p.purchase_price, 0);
   const lowStockCount = products.filter((p) => p.current_stock <= p.minimum_stock && p.minimum_stock > 0 && p.current_stock > 0).length;
   const outOfStockCount = products.filter((p) => p.current_stock <= 0).length;
   const totalProducts = products.length;
 
-  // Today's movement stats
   const todayStr = new Date().toISOString().split('T')[0];
   const todayMovements = movements.filter((m) => m.created_at.startsWith(todayStr));
-  const stockInToday = todayMovements.filter((m) => m.movement_type === 'in' || m.movement_type === 'adjustment_in').reduce((s, m) => s + m.quantity, 0);
-  const stockOutToday = todayMovements.filter((m) => m.movement_type === 'out' || m.movement_type === 'adjustment_out').reduce((s, m) => s + m.quantity, 0);
+  const stockInToday = todayMovements.filter((m) => m.movement_type === 'in' || m.movement_type === 'adjustment_in' || m.movement_type === 'sales_return').reduce((s, m) => s + m.quantity, 0);
+  const stockOutToday = todayMovements.filter((m) => m.movement_type === 'out' || m.movement_type === 'adjustment_out' || m.movement_type === 'purchase_return').reduce((s, m) => s + m.quantity, 0);
   const adjustmentsToday = todayMovements.filter((m) => m.movement_type === 'adjustment_in' || m.movement_type === 'adjustment_out').length;
+
+  const tabs: { id: TabId; label: string; icon: typeof Package }[] = [
+    { id: 'stock', label: 'Current Stock', icon: Package },
+    { id: 'movements', label: 'Stock Movement History', icon: History },
+    { id: 'physical', label: 'Physical Stock Check', icon: ClipboardCheck },
+    { id: 'sales_return', label: 'Sales Return', icon: Undo2 },
+    { id: 'purchase_return', label: 'Purchase Return', icon: RotateCcw },
+  ];
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Inventory & Stock Management</h1>
-        <p className="text-sm text-slate-500 mt-1">Track stock levels, adjustments, and movement history</p>
+        <p className="text-sm text-slate-500 mt-1">Track stock levels, adjustments, returns, and movement history</p>
       </div>
 
       {/* Summary cards */}
@@ -275,39 +595,53 @@ export default function Inventory() {
 
       {/* Tabs */}
       <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setTab('stock')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'stock' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
-        >
-          Current Stock
-        </button>
-        <button
-          onClick={() => setTab('movements')}
-          className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === 'movements' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
-        >
-          <History className="w-4 h-4 inline mr-1" />
-          Stock Movement History
-        </button>
+        {tabs.map(t => {
+          const Icon = t.icon;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium ${tab === t.id ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border border-slate-200'}`}
+            >
+              <Icon className="w-4 h-4 inline mr-1" />
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
+      {/* Current Stock Tab */}
       {tab === 'stock' && (
         <>
           <Card className="p-4">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-              <input
-                placeholder="Search products by name or SKU..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1 relative">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  placeholder="Search products by name or SKU..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white"
+              >
+                <option value="">All Status</option>
+                <option value="in">In Stock</option>
+                <option value="low">Low Stock</option>
+                <option value="out">Out of Stock</option>
+              </select>
+              <Button variant="secondary" onClick={printTable}><Printer className="w-4 h-4 inline mr-1" />Print</Button>
             </div>
           </Card>
 
           <Card className="overflow-hidden">
             {loading ? (
               <div className="p-8 text-center text-sm text-slate-400">Loading...</div>
-            ) : products.length === 0 ? (
+            ) : filteredProducts.length === 0 ? (
               <EmptyState icon={<Warehouse className="w-8 h-8" />} title="No products found" />
             ) : (
               <div className="overflow-x-auto">
@@ -320,13 +654,15 @@ export default function Inventory() {
                       <th className="text-right px-4 py-3 font-medium">Opening</th>
                       <th className="text-right px-4 py-3 font-medium">Current</th>
                       <th className="text-right px-4 py-3 font-medium">Min Level</th>
+                      <th className="text-right px-4 py-3 font-medium">Purchase Price</th>
+                      <th className="text-right px-4 py-3 font-medium">Sell Price</th>
                       <th className="text-right px-4 py-3 font-medium">Stock Value</th>
                       <th className="text-center px-4 py-3 font-medium">Status</th>
                       <th className="text-right px-4 py-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {products.map((p) => {
+                    {filteredProducts.map((p) => {
                       const lowStock = p.current_stock <= p.minimum_stock && p.minimum_stock > 0 && p.current_stock > 0;
                       const outOfStock = p.current_stock <= 0;
                       return (
@@ -340,6 +676,8 @@ export default function Inventory() {
                           <td className="px-4 py-3 text-right text-slate-500">{p.opening_stock}</td>
                           <td className="px-4 py-3 text-right font-medium text-slate-900">{p.current_stock}</td>
                           <td className="px-4 py-3 text-right text-slate-500">{p.minimum_stock}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(p.purchase_price)}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(p.selling_price)}</td>
                           <td className="px-4 py-3 text-right text-slate-700">{formatCurrency(p.current_stock * p.purchase_price)}</td>
                           <td className="px-4 py-3 text-center">
                             {outOfStock ? <Badge color="red">Out of Stock</Badge> : lowStock ? <Badge color="amber">Low Stock</Badge> : <Badge color="green">In Stock</Badge>}
@@ -373,6 +711,7 @@ export default function Inventory() {
         </>
       )}
 
+      {/* Movement History Tab */}
       {tab === 'movements' && (
         <>
           <Card className="p-4">
@@ -400,10 +739,11 @@ export default function Inventory() {
                   <option value="">All Types</option>
                   <option value="in">Stock In / Purchase</option>
                   <option value="out">Stock Out / Sale</option>
+                  <option value="sales_return">Sales Return</option>
+                  <option value="purchase_return">Purchase Return</option>
                   <option value="adjustment_in">Adjustment (+)</option>
                   <option value="adjustment_out">Adjustment (-)</option>
                   <option value="opening">Opening Stock</option>
-                  <option value="damage">Damaged</option>
                 </select>
               </div>
               <div>
@@ -415,17 +755,11 @@ export default function Inventory() {
                   className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"
                 />
               </div>
-              <div className="flex items-end">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    setFilterProduct('');
-                    setFilterType('');
-                    setFilterDate('');
-                  }}
-                >
-                  <X className="w-4 h-4 inline mr-1" /> Clear
+              <div className="flex items-end gap-2">
+                <Button variant="secondary" onClick={() => { setFilterProduct(''); setFilterType(''); setFilterDate(''); }}>
+                  <X className="w-4 h-4 inline mr-1" />Clear
                 </Button>
+                <Button variant="secondary" onClick={printTable}><Printer className="w-4 h-4 inline" /></Button>
               </div>
             </div>
           </Card>
@@ -443,7 +777,8 @@ export default function Inventory() {
                       <th className="text-left px-4 py-3 font-medium">Date</th>
                       <th className="text-left px-4 py-3 font-medium">Product</th>
                       <th className="text-left px-4 py-3 font-medium">Type</th>
-                      <th className="text-right px-4 py-3 font-medium">Qty</th>
+                      <th className="text-right px-4 py-3 font-medium">Qty In</th>
+                      <th className="text-right px-4 py-3 font-medium">Qty Out</th>
                       <th className="text-right px-4 py-3 font-medium">Balance</th>
                       <th className="text-left px-4 py-3 font-medium">Reference</th>
                       <th className="text-left px-4 py-3 font-medium">Supplier/Customer</th>
@@ -452,37 +787,256 @@ export default function Inventory() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {movements.map((m) => (
-                      <tr key={m.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(m.created_at)}</td>
+                    {movements.map((m) => {
+                      const isIn = m.movement_type === 'in' || m.movement_type === 'adjustment_in' || m.movement_type === 'sales_return' || m.movement_type === 'opening';
+                      return (
+                        <tr key={m.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(m.created_at)}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-900">{m.products?.name || '-'}</div>
+                            <div className="text-xs text-slate-400">{m.products?.sku}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {m.movement_type === 'in' && <Badge color="green"><ArrowUp className="w-3 h-3 inline mr-1" />Stock In</Badge>}
+                            {m.movement_type === 'out' && <Badge color="red"><ArrowDown className="w-3 h-3 inline mr-1" />Stock Out</Badge>}
+                            {m.movement_type === 'adjustment_in' && <Badge color="blue"><Plus className="w-3 h-3 inline mr-1" />Adjust +</Badge>}
+                            {m.movement_type === 'adjustment_out' && <Badge color="blue"><Minus className="w-3 h-3 inline mr-1" />Adjust -</Badge>}
+                            {m.movement_type === 'sales_return' && <Badge color="green"><Undo2 className="w-3 h-3 inline mr-1" />Sales Return</Badge>}
+                            {m.movement_type === 'purchase_return' && <Badge color="red"><RotateCcw className="w-3 h-3 inline mr-1" />Purchase Return</Badge>}
+                            {m.movement_type === 'opening' && <Badge color="slate">Opening</Badge>}
+                          </td>
+                          <td className="px-4 py-3 text-right font-medium text-green-600">{isIn ? `+${m.quantity}` : ''}</td>
+                          <td className="px-4 py-3 text-right font-medium text-red-500">{!isIn ? `-${m.quantity}` : ''}</td>
+                          <td className="px-4 py-3 text-right text-slate-600">{m.balance_after || '-'}</td>
+                          <td className="px-4 py-3 text-slate-500">{m.reference_number || m.reference_type || '-'}</td>
+                          <td className="px-4 py-3 text-slate-500">{m.suppliers?.name || m.customers?.name || '-'}</td>
+                          <td className="px-4 py-3 text-slate-500">{m.reason || m.notes || '-'}</td>
+                          <td className="px-4 py-3 text-slate-500">{m.user_name || 'admin'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </>
+      )}
+
+      {/* Physical Stock Check Tab */}
+      {tab === 'physical' && (
+        <>
+          <Card className="p-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Physical Stock Count</h3>
+                <p className="text-xs text-slate-500">Compare system stock with actual counted stock and apply adjustments</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={initPhysicalCheck}>Load All Products</Button>
+                {physicalItems.length > 0 && (
+                  <Button onClick={applyPhysicalAdjustments}>
+                    <ClipboardCheck className="w-4 h-4 inline mr-1" />Apply Adjustments
+                  </Button>
+                )}
+              </div>
+            </div>
+            {physicalItems.length > 0 && (
+              <div className="mt-3">
+                <Textarea label="Notes" rows={1} value={physicalNotes} onChange={(e) => setPhysicalNotes(e.target.value)} placeholder="Stock take notes..." />
+              </div>
+            )}
+          </Card>
+
+          {physicalItems.length > 0 ? (
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-600">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium">Product</th>
+                      <th className="text-right px-4 py-3 font-medium">System Stock</th>
+                      <th className="text-right px-4 py-3 font-medium">Physical Stock</th>
+                      <th className="text-right px-4 py-3 font-medium">Difference</th>
+                      <th className="text-left px-4 py-3 font-medium">Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {physicalItems.map((it) => (
+                      <tr key={it.product_id} className={it.difference !== 0 ? 'bg-amber-50' : ''}>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{m.products?.name || '-'}</div>
-                          <div className="text-xs text-slate-400">{m.products?.sku}</div>
+                          <div className="font-medium text-slate-900">{it.product.name}</div>
+                          <div className="text-xs text-slate-400">{it.product.sku} - {it.product.unit}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-600">{it.system_stock}</td>
+                        <td className="px-4 py-3 text-right">
+                          <input
+                            type="number"
+                            value={it.physical_stock}
+                            onChange={(e) => updatePhysicalQty(it.product_id, Number(e.target.value))}
+                            className="w-20 px-2 py-1 text-right border border-slate-300 rounded text-sm"
+                          />
+                        </td>
+                        <td className={`px-4 py-3 text-right font-medium ${it.difference > 0 ? 'text-green-600' : it.difference < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                          {it.difference > 0 ? `+${it.difference}` : it.difference || ''}
                         </td>
                         <td className="px-4 py-3">
-                          {m.movement_type === 'in' && <Badge color="green"><ArrowUp className="w-3 h-3 inline mr-1" />Stock In</Badge>}
-                          {m.movement_type === 'out' && <Badge color="red"><ArrowDown className="w-3 h-3 inline mr-1" />Stock Out</Badge>}
-                          {m.movement_type === 'adjustment_in' && <Badge color="blue"><Plus className="w-3 h-3 inline mr-1" />Adjust +</Badge>}
-                          {m.movement_type === 'adjustment_out' && <Badge color="blue"><Minus className="w-3 h-3 inline mr-1" />Adjust -</Badge>}
-                          {m.movement_type === 'opening' && <Badge color="slate">Opening</Badge>}
-                          {m.movement_type === 'damage' && <Badge color="red">Damaged</Badge>}
+                          {it.difference !== 0 ? (
+                            <select
+                              value={it.reason}
+                              onChange={(e) => setPhysicalItems(items => items.map(i => i.product_id === it.product_id ? { ...i, reason: e.target.value } : i))}
+                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white"
+                            >
+                              <option value="">Select reason</option>
+                              {ADJUSTMENT_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          ) : <span className="text-slate-300">-</span>}
                         </td>
-                        <td className="px-4 py-3 text-right font-medium">
-                          {m.movement_type === 'out' || m.movement_type === 'adjustment_out' || m.movement_type === 'damage' ? '-' : '+'}
-                          {m.quantity} {m.products?.unit || ''}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-600">{m.balance_after || '-'}</td>
-                        <td className="px-4 py-3 text-slate-500">{m.reference_number || m.reference_type || '-'}</td>
-                        <td className="px-4 py-3 text-slate-500">
-                          {m.suppliers?.name || m.customers?.name || '-'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-500">{m.reason || m.notes || '-'}</td>
-                        <td className="px-4 py-3 text-slate-500">{m.user_name || 'admin'}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </Card>
+          ) : (
+            <Card className="p-8">
+              <EmptyState icon={<ClipboardCheck className="w-8 h-8" />} title="No stock check started" description="Click 'Load All Products' to begin a physical stock count" />
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* Sales Return Tab */}
+      {tab === 'sales_return' && (
+        <>
+          <Card className="p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 mb-3">Sales Return - Restore Stock from Customer Return</h3>
+              <Select label="Select Original Sale" value={srSaleId} onChange={(e) => onSrSaleChange(e.target.value)}>
+                <option value="">Select an invoice</option>
+                {sales.map(s => (
+                  <option key={s.id} value={s.id}>{s.invoice_number} - {s.customers?.name || 'Walk-in'} - {formatDate(s.sale_date)}</option>
+                ))}
+              </Select>
+            </div>
+
+            {srItems.length > 0 && (
+              <>
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Product</th>
+                        <th className="text-right px-3 py-2 font-medium">Sold Qty</th>
+                        <th className="text-right px-3 py-2 font-medium">Return Qty</th>
+                        <th className="text-right px-3 py-2 font-medium">Rate</th>
+                        <th className="text-left px-3 py-2 font-medium">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {srItems.map((it, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-2 font-medium text-slate-900">{it.product_name} <span className="text-xs text-slate-400">({it.unit})</span></td>
+                          <td className="px-3 py-2 text-right text-slate-500">{it.max_qty}</td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              max={it.max_qty}
+                              min={0}
+                              value={it.quantity || ''}
+                              onChange={(e) => setSrItems(items => items.map((i, j) => j === idx ? { ...i, quantity: Math.min(Number(e.target.value), i.max_qty) } : i))}
+                              className="w-20 px-2 py-1 text-right border border-slate-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(it.rate)}</td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={it.reason}
+                              onChange={(e) => setSrItems(items => items.map((i, j) => j === idx ? { ...i, reason: e.target.value } : i))}
+                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white"
+                            >
+                              {RETURN_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Textarea label="Notes" rows={2} value={srNotes} onChange={(e) => setSrNotes(e.target.value)} />
+                <Button onClick={saveSalesReturn}><Undo2 className="w-4 h-4 inline mr-1" />Save Sales Return</Button>
+              </>
+            )}
+            {srItems.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">Select an invoice to load line items for return</p>
+            )}
+          </Card>
+        </>
+      )}
+
+      {/* Purchase Return Tab */}
+      {tab === 'purchase_return' && (
+        <>
+          <Card className="p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 mb-3">Purchase Return - Return Stock to Supplier</h3>
+              <Select label="Select Original Purchase" value={prPurchaseId} onChange={(e) => onPrPurchaseChange(e.target.value)}>
+                <option value="">Select a purchase invoice</option>
+                {purchases.map(p => (
+                  <option key={p.id} value={p.id}>{p.invoice_number} - {p.suppliers?.name || '-'} - {formatDate(p.purchase_date)}</option>
+                ))}
+              </Select>
+            </div>
+
+            {prItems.length > 0 && (
+              <>
+                <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Product</th>
+                        <th className="text-right px-3 py-2 font-medium">Purchased Qty</th>
+                        <th className="text-right px-3 py-2 font-medium">Return Qty</th>
+                        <th className="text-right px-3 py-2 font-medium">Rate</th>
+                        <th className="text-left px-3 py-2 font-medium">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {prItems.map((it, idx) => (
+                        <tr key={idx}>
+                          <td className="px-3 py-2 font-medium text-slate-900">{it.product_name} <span className="text-xs text-slate-400">({it.unit})</span></td>
+                          <td className="px-3 py-2 text-right text-slate-500">{it.max_qty}</td>
+                          <td className="px-3 py-2 text-right">
+                            <input
+                              type="number"
+                              max={it.max_qty}
+                              min={0}
+                              value={it.quantity || ''}
+                              onChange={(e) => setPrItems(items => items.map((i, j) => j === idx ? { ...i, quantity: Math.min(Number(e.target.value), i.max_qty) } : i))}
+                              className="w-20 px-2 py-1 text-right border border-slate-300 rounded text-sm"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right">{formatCurrency(it.rate)}</td>
+                          <td className="px-3 py-2">
+                            <select
+                              value={it.reason}
+                              onChange={(e) => setPrItems(items => items.map((i, j) => j === idx ? { ...i, reason: e.target.value } : i))}
+                              className="px-2 py-1 border border-slate-300 rounded text-xs bg-white"
+                            >
+                              {RETURN_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <Textarea label="Notes" rows={2} value={prNotes} onChange={(e) => setPrNotes(e.target.value)} />
+                <Button onClick={savePurchaseReturn}><RotateCcw className="w-4 h-4 inline mr-1" />Save Purchase Return</Button>
+              </>
+            )}
+            {prItems.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">Select a purchase invoice to load line items for return</p>
             )}
           </Card>
         </>

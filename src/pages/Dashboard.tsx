@@ -36,6 +36,8 @@ type DashboardData = {
     amount_paid: number;
   }[];
   lowStockProducts: { id: string; name: string; current_stock: number; minimum_stock: number; unit: string }[];
+  outOfStockProducts: { id: string; name: string; unit: string }[];
+  recentMovements: { id: string; movement_type: string; quantity: number; created_at: string; reference_number: string | null; reason: string | null; products: { name: string; unit: string } | null }[];
   stockInToday: number;
   stockOutToday: number;
   adjustmentsToday: number;
@@ -55,7 +57,7 @@ export default function Dashboard() {
     const today = new Date().toISOString().split('T')[0];
     const startOfMonth = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
 
-    const [salesToday, purchasesToday, products, customers, suppliers, recentSales, monthlySalesRes, lowStockRes, expensesToday, categories, allSales, allPurchases, allExpenses, stockMovementsToday] =
+    const [salesToday, purchasesToday, products, customers, suppliers, recentSales, monthlySalesRes, lowStockRes, expensesToday, categories, allSales, allPurchases, allExpenses, stockMovementsToday, recentMovementsRes] =
       await Promise.all([
         supabase.from('sales').select('total_amount, amount_paid, payment_method').eq('sale_date', today),
         supabase.from('purchases').select('total_amount, amount_paid, payment_method').eq('purchase_date', today),
@@ -81,6 +83,7 @@ export default function Dashboard() {
         supabase.from('purchases').select('amount_paid, payment_method'),
         supabase.from('expenses').select('amount, payment_method'),
         supabase.from('stock_movements').select('movement_type, quantity').gte('created_at', today + 'T00:00:00'),
+        supabase.from('stock_movements').select('id, movement_type, quantity, created_at, reference_number, reason, products(name, unit)').order('created_at', { ascending: false }).limit(10),
       ]);
 
     const todaySalesAmount = (salesToday.data || []).reduce((s, r) => s + Number(r.total_amount), 0);
@@ -150,6 +153,8 @@ export default function Dashboard() {
       monthlySales,
       recentSales: (recentSales.data || []) as DashboardData['recentSales'],
       lowStockProducts: lowStockProducts.slice(0, 5),
+      outOfStockProducts: outOfStockProducts.slice(0, 5).map(p => ({ id: p.id, name: p.name, unit: p.unit })),
+      recentMovements: (recentMovementsRes.data || []) as DashboardData['recentMovements'],
       stockInToday,
       stockOutToday,
       adjustmentsToday,
@@ -347,20 +352,71 @@ export default function Dashboard() {
       {data!.lowStockProducts.length > 0 && (
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-4">
-            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
             <h3 className="text-lg font-bold text-slate-900">Low Stock Alert</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {data!.lowStockProducts.map((p) => (
-              <div key={p.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+              <div key={p.id} className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
                 <div>
                   <p className="text-sm font-medium text-slate-900">{p.name}</p>
-                  <p className="text-xs text-red-600">
+                  <p className="text-xs text-amber-600">
                     Stock: {p.current_stock} {p.unit} (Min: {p.minimum_stock} {p.unit})
                   </p>
                 </div>
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Out of Stock Alert */}
+      {data!.outOfStockProducts.length > 0 && (
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle className="w-5 h-5 text-red-500" />
+            <h3 className="text-lg font-bold text-slate-900">Out of Stock Alert</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {data!.outOfStockProducts.map((p) => (
+              <div key={p.id} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{p.name}</p>
+                  <p className="text-xs text-red-600">Stock: 0 {p.unit}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Recent Stock Movements */}
+      {data!.recentMovements.length > 0 && (
+        <Card className="p-5">
+          <h3 className="text-lg font-bold text-slate-900 mb-4">Recent Stock Movements</h3>
+          <div className="space-y-2">
+            {data!.recentMovements.map((m) => {
+              const isIn = m.movement_type === 'in' || m.movement_type === 'adjustment_in' || m.movement_type === 'sales_return' || m.movement_type === 'opening';
+              return (
+                <div key={m.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isIn ? 'bg-green-100' : 'bg-red-100'}`}>
+                      {isIn ? <TrendingUp className="w-4 h-4 text-green-600" /> : <TrendingDown className="w-4 h-4 text-red-500" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-slate-900">{m.products?.name || '-'}</p>
+                      <p className="text-xs text-slate-400">{formatDate(m.created_at)} - {m.reference_number || m.movement_type}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-bold ${isIn ? 'text-green-600' : 'text-red-500'}`}>
+                      {isIn ? '+' : '-'}{m.quantity} {m.products?.unit || ''}
+                    </p>
+                    <p className="text-xs text-slate-400">{m.reason || m.movement_type}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}

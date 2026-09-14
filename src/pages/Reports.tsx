@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { Card, Select, Input, Button, Badge } from '@/components/ui';
 import { formatCurrency, formatDate, getMonthName } from '@/lib/utils';
 
-type ReportType = 'sales' | 'purchases' | 'profit' | 'stock' | 'lowstock' | 'outofstock' | 'stock_movement' | 'stock_in' | 'stock_out' | 'stock_valuation' | 'customer_outstanding' | 'supplier_outstanding' | 'gst';
+type ReportType = 'sales' | 'purchases' | 'profit' | 'stock' | 'lowstock' | 'outofstock' | 'stock_movement' | 'stock_in' | 'stock_out' | 'stock_valuation' | 'stock_adjustment' | 'stock_ledger' | 'sales_return' | 'purchase_return' | 'customer_outstanding' | 'supplier_outstanding' | 'gst';
 
 export default function Reports() {
   const [reportType, setReportType] = useState<ReportType>('sales');
@@ -244,6 +244,10 @@ export default function Reports() {
     { value: 'stock_movement', label: 'Stock Movement', icon: TrendingUp },
     { value: 'stock_in', label: 'Stock In Report', icon: Package },
     { value: 'stock_out', label: 'Stock Out Report', icon: Package },
+    { value: 'stock_adjustment', label: 'Stock Adjustment', icon: Package },
+    { value: 'stock_ledger', label: 'Stock Ledger', icon: FileText },
+    { value: 'sales_return', label: 'Sales Return', icon: Package },
+    { value: 'purchase_return', label: 'Purchase Return', icon: Package },
     { value: 'customer_outstanding', label: 'Customer Outstanding', icon: Users },
     { value: 'supplier_outstanding', label: 'Supplier Outstanding', icon: Truck },
     { value: 'gst', label: 'GST Report', icon: FileText },
@@ -288,6 +292,10 @@ export default function Reports() {
       case 'stock_movement': return ['Date', 'Product', 'Type', 'Qty', 'Unit', 'Reason', 'User'];
       case 'stock_in': return ['Date', 'Product', 'Qty', 'Unit', 'Supplier', 'Reference'];
       case 'stock_out': return ['Date', 'Product', 'Qty', 'Unit', 'Customer', 'Reference'];
+      case 'stock_adjustment': return ['Date', 'Product', 'Type', 'Qty', 'Unit', 'Reason', 'User'];
+      case 'stock_ledger': return ['Date', 'Product', 'Type', 'Qty In', 'Qty Out', 'Balance', 'Rate', 'Value', 'Party'];
+      case 'sales_return': return ['Return #', 'Date', 'Customer', 'Product', 'Qty', 'Rate', 'Total', 'Reason'];
+      case 'purchase_return': return ['Return #', 'Date', 'Supplier', 'Product', 'Qty', 'Rate', 'Total', 'Reason'];
       case 'customer_outstanding': return ['Name', 'Mobile', 'Outstanding', 'Total Purchases'];
       case 'supplier_outstanding': return ['Name', 'Mobile', 'Outstanding'];
       case 'gst': return ['Invoice', 'Date', 'Subtotal', 'GST', 'Total'];
@@ -390,6 +398,53 @@ export default function Reports() {
           <td className="px-4 py-3 text-right font-medium">{row.quantity} {row.products?.unit || ''}</td>
           <td className="px-4 py-3 text-slate-500">{row.customers?.name || '-'}</td>
           <td className="px-4 py-3 text-slate-500">{row.reference_number || row.reference_type || '-'}</td>
+        </>
+      );
+      case 'stock_adjustment': return (
+        <>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.created_at)}</td>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.products?.name || '-'}</td>
+          <td className="px-4 py-3"><Badge color={row.movement_type === 'adjustment_in' ? 'green' : 'red'}>{row.movement_type === 'adjustment_in' ? 'Add +' : 'Remove -'}</Badge></td>
+          <td className="px-4 py-3 text-right font-medium">{row.quantity} {row.products?.unit || ''}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reason || row.notes || '-'}</td>
+          <td className="px-4 py-3 text-slate-500">{row.user_name || 'admin'}</td>
+        </>
+      );
+      case 'stock_ledger': return (
+        <>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.created_at)}</td>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.products?.name || '-'}</td>
+          <td className="px-4 py-3"><Badge color={row.movement_type === 'in' || row.movement_type === 'adjustment_in' || row.movement_type === 'sales_return' || row.movement_type === 'opening' ? 'green' : 'red'}>{row.movement_type}</Badge></td>
+          <td className="px-4 py-3 text-right text-green-600 font-medium">{(row.movement_type === 'in' || row.movement_type === 'adjustment_in' || row.movement_type === 'sales_return' || row.movement_type === 'opening') ? `+${row.quantity}` : ''}</td>
+          <td className="px-4 py-3 text-right text-red-500 font-medium">{(row.movement_type === 'out' || row.movement_type === 'adjustment_out' || row.movement_type === 'purchase_return') ? `-${row.quantity}` : ''}</td>
+          <td className="px-4 py-3 text-right text-slate-600">{row.balance_after || '-'}</td>
+          <td className="px-4 py-3 text-right">{formatCurrency(row.unit_cost || 0)}</td>
+          <td className="px-4 py-3 text-right">{formatCurrency((row.unit_cost || 0) * row.quantity)}</td>
+          <td className="px-4 py-3 text-slate-500">{row.suppliers?.name || row.customers?.name || '-'}</td>
+        </>
+      );
+      case 'sales_return': return (
+        <>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.return_number}</td>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.return_date)}</td>
+          <td className="px-4 py-3 text-slate-600">{row.customers?.name || '-'}</td>
+          <td className="px-4 py-3 text-slate-900">{row.products?.name || row.product_name || '-'}</td>
+          <td className="px-4 py-3 text-right">{row.quantity}</td>
+          <td className="px-4 py-3 text-right">{formatCurrency(row.rate)}</td>
+          <td className="px-4 py-3 text-right font-medium">{formatCurrency(row.total)}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reason || '-'}</td>
+        </>
+      );
+      case 'purchase_return': return (
+        <>
+          <td className="px-4 py-3 font-medium text-slate-900">{row.return_number}</td>
+          <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(row.return_date)}</td>
+          <td className="px-4 py-3 text-slate-600">{row.suppliers?.name || '-'}</td>
+          <td className="px-4 py-3 text-slate-900">{row.products?.name || row.product_name || '-'}</td>
+          <td className="px-4 py-3 text-right">{row.quantity}</td>
+          <td className="px-4 py-3 text-right">{formatCurrency(row.rate)}</td>
+          <td className="px-4 py-3 text-right font-medium">{formatCurrency(row.total)}</td>
+          <td className="px-4 py-3 text-slate-500">{row.reason || '-'}</td>
         </>
       );
       case 'customer_outstanding': return (
