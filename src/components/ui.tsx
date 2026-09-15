@@ -56,14 +56,14 @@ type StatCardProps = {
 
 export function StatCard({ label, value, icon, color = 'bg-blue-500', trend }: StatCardProps) {
   return (
-    <Card className="p-5">
+    <Card className="p-5 stat-card-hover fade-in-up">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-slate-500 font-medium">{label}</p>
           <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
           {trend && <p className="text-xs text-slate-400 mt-1">{trend}</p>}
         </div>
-        <div className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center text-white`}>
+        <div className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center text-white stat-icon-hover`}>
           {icon}
         </div>
       </div>

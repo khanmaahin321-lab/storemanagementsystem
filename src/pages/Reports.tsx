@@ -191,6 +191,66 @@ export default function Reports() {
         ]);
         break;
       }
+      case 'stock_adjustment': {
+        let saQuery = supabase.from('stock_movements').select('*, products(name, sku, unit)').in('movement_type', ['adjustment_in', 'adjustment_out']).order('created_at', { ascending: false });
+        if (fromDate) saQuery = saQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) saQuery = saQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: adjMovements } = await saQuery;
+        const saRows = (adjMovements || []) as any[];
+        setData(saRows);
+        const totalAdjIn = saRows.filter((m) => m.movement_type === 'adjustment_in').reduce((s, m) => s + Number(m.quantity), 0);
+        const totalAdjOut = saRows.filter((m) => m.movement_type === 'adjustment_out').reduce((s, m) => s + Number(m.quantity), 0);
+        setSummary([
+          { label: 'Total Adjustments', value: String(saRows.length) },
+          { label: 'Stock Added', value: String(totalAdjIn) },
+          { label: 'Stock Removed', value: String(totalAdjOut) },
+        ]);
+        break;
+      }
+      case 'stock_ledger': {
+        let slQuery = supabase.from('stock_movements').select('*, products(name, sku, unit), suppliers(name), customers(name)').order('created_at', { ascending: true });
+        if (fromDate) slQuery = slQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) slQuery = slQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: ledgerMovements } = await slQuery;
+        const slRows = (ledgerMovements || []) as any[];
+        setData(slRows);
+        const inQty = slRows.filter((m) => ['in', 'adjustment_in', 'sales_return', 'opening'].includes(m.movement_type)).reduce((s, m) => s + Number(m.quantity), 0);
+        const outQty = slRows.filter((m) => ['out', 'adjustment_out', 'purchase_return'].includes(m.movement_type)).reduce((s, m) => s + Number(m.quantity), 0);
+        setSummary([
+          { label: 'Total Entries', value: String(slRows.length) },
+          { label: 'Total In', value: String(inQty) },
+          { label: 'Total Out', value: String(outQty) },
+        ]);
+        break;
+      }
+      case 'sales_return': {
+        let srQuery = supabase.from('sales_return_items').select('*, sales_returns(return_number, return_date, customers(name)), products(name)').order('created_at', { ascending: false });
+        if (fromDate) srQuery = srQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) srQuery = srQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: srItems } = await srQuery;
+        const srRows = (srItems || []) as any[];
+        setData(srRows);
+        const totalReturn = srRows.reduce((s, r) => s + Number(r.total), 0);
+        setSummary([
+          { label: 'Total Returns', value: String(srRows.length) },
+          { label: 'Total Return Value', value: formatCurrency(totalReturn) },
+        ]);
+        break;
+      }
+      case 'purchase_return': {
+        let prQuery = supabase.from('purchase_return_items').select('*, purchase_returns(return_number, return_date, suppliers(name)), products(name)').order('created_at', { ascending: false });
+        if (fromDate) prQuery = prQuery.gte('created_at', fromDate + 'T00:00:00');
+        if (toDate) prQuery = prQuery.lte('created_at', toDate + 'T23:59:59');
+        const { data: prItems } = await prQuery;
+        const prRows = (prItems || []) as any[];
+        setData(prRows);
+        const totalReturn = prRows.reduce((s, r) => s + Number(r.total), 0);
+        setSummary([
+          { label: 'Total Returns', value: String(prRows.length) },
+          { label: 'Total Return Value', value: formatCurrency(totalReturn) },
+        ]);
+        break;
+      }
       case 'customer_outstanding': {
         const { data: customers } = await supabase.from('customers').select('*').order('outstanding_balance', { ascending: false });
         const rows = ((customers || []) as any[]).filter((c) => Number(c.outstanding_balance) > 0);

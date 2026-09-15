@@ -296,7 +296,7 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Monthly Sales Chart */}
-        <Card className="p-5">
+        <Card className="p-5 fade-in-up">
           <h3 className="text-lg font-bold text-slate-900 mb-4">Monthly Sales (This Year)</h3>
           {data!.monthlySales.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-8">No sales data yet</p>
@@ -307,7 +307,7 @@ export default function Dashboard() {
                   <span className="text-xs font-medium text-slate-500 w-8">{m.month}</span>
                   <div className="flex-1 bg-slate-100 rounded-full h-6 overflow-hidden">
                     <div
-                      className="bg-gradient-to-r from-amber-500 to-amber-600 h-full rounded-full flex items-center justify-end pr-2"
+                      className="bg-gradient-to-r from-amber-500 to-amber-600 h-full rounded-full flex items-center justify-end pr-2 bar-grow"
                       style={{ width: `${(m.amount / maxMonthly) * 100}%` }}
                     >
                       <span className="text-xs text-white font-medium">{formatCurrency(m.amount).replace('₹', '')}</span>
@@ -320,7 +320,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Recent Sales */}
-        <Card className="p-5">
+        <Card className="p-5 fade-in-up">
           <h3 className="text-lg font-bold text-slate-900 mb-4">Recent Sales</h3>
           {data!.recentSales.length === 0 ? (
             <p className="text-sm text-slate-400 text-center py-8">No sales yet</p>
@@ -350,7 +350,7 @@ export default function Dashboard() {
 
       {/* Low Stock Alert */}
       {data!.lowStockProducts.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-5 fade-in-up">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="w-5 h-5 text-amber-500" />
             <h3 className="text-lg font-bold text-slate-900">Low Stock Alert</h3>
@@ -372,7 +372,7 @@ export default function Dashboard() {
 
       {/* Out of Stock Alert */}
       {data!.outOfStockProducts.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-5 fade-in-up">
           <div className="flex items-center gap-2 mb-4">
             <AlertTriangle className="w-5 h-5 text-red-500" />
             <h3 className="text-lg font-bold text-slate-900">Out of Stock Alert</h3>
@@ -392,7 +392,7 @@ export default function Dashboard() {
 
       {/* Recent Stock Movements */}
       {data!.recentMovements.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-5 fade-in-up">
           <h3 className="text-lg font-bold text-slate-900 mb-4">Recent Stock Movements</h3>
           <div className="space-y-2">
             {data!.recentMovements.map((m) => {
