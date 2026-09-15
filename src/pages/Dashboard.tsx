@@ -182,7 +182,7 @@ export default function Dashboard() {
       </div>
 
       {/* Top stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-up">
         <StatCard
           label="Today's Sales"
           value={formatCurrency(data!.todaySales)}
@@ -211,7 +211,7 @@ export default function Dashboard() {
       </div>
 
       {/* Secondary stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-up-delay-1">
         <StatCard
           label="Cash Balance"
           value={formatCurrency(data!.cashBalance)}
@@ -239,7 +239,7 @@ export default function Dashboard() {
       </div>
 
       {/* Tertiary stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-up-delay-2">
         <StatCard
           label="Stock Value"
           value={formatCurrency(data!.totalStockValue)}
@@ -267,7 +267,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quaternary stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 fade-in-up-delay-3">
         <StatCard
           label="Customer Dues"
           value={formatCurrency(data!.customerDues)}
