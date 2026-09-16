@@ -8,6 +8,7 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -23,12 +24,22 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
     e.preventDefault();
     setLoading(true);
     setError('');
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError) {
-      setError(signInError.message);
-      setLoading(false);
+    if (mode === 'signup') {
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      if (signUpError) {
+        setError(signUpError.message);
+        setLoading(false);
+      } else {
+        onSuccess();
+      }
     } else {
-      onSuccess();
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+      } else {
+        onSuccess();
+      }
     }
   }
 
@@ -46,7 +57,9 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
               <img src="/vaishnavi-marble-logo.svg" alt="Vaishnavi Marble" className="w-full h-full object-cover" />
             </div>
             <h1 className="text-xl font-bold text-slate-900">Vaishnav Marble Shop</h1>
-            <p className="text-sm text-slate-500 mt-1">Sign in to your admin account</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {mode === 'signin' ? 'Sign in to your admin account' : 'Create your admin account'}
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -101,13 +114,30 @@ export default function Login({ onSuccess }: { onSuccess: () => void }) {
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Signing in...
+                  {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
                 </>
-              ) : (
+              ) : mode === 'signin' ? (
                 'Sign In'
+              ) : (
+                'Create Account'
               )}
             </button>
           </form>
+
+          <div className="text-center mt-4">
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === 'signin' ? 'signup' : 'signin');
+                setError('');
+              }}
+              className="text-xs text-amber-600 hover:text-amber-700 font-medium transition-colors"
+            >
+              {mode === 'signin'
+                ? "Don't have an account? Create one"
+                : 'Already have an account? Sign in'}
+            </button>
+          </div>
 
           <p className="text-center text-xs text-slate-400 mt-6">
             Vaishnav Marble Shop Management System
