@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
-import { Card, StatCard } from '@/components/ui/card';
+import { Card, StatCard } from '@/components/ui';
 import { formatCurrency, formatDate, getMonthName } from '@/lib/utils';
 
 interface DashboardData {
