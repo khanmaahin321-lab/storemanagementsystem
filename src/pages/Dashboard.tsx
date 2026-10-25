@@ -725,7 +725,7 @@ export default function Dashboard() {
               title="Total Products"
               value={<AnimatedNumber value={dashboard.totalProducts} />}
               icon={<Package size={22} />}
-              color="bg-purple-500"
+              color="bg-cyan-500"
               subtitle={`${dashboard.categoryCount} categories`}
             />
           </div>
@@ -811,7 +811,7 @@ export default function Dashboard() {
               title="Stock Out Today"
               value={<AnimatedNumber value={dashboard.stockOutToday} />}
               icon={<TrendingDown size={20} />}
-              color="bg-indigo-500"
+              color="bg-blue-600"
               subtitle="Units issued"
             />
           </div>
@@ -834,7 +834,7 @@ export default function Dashboard() {
               title="Total Stock Value"
               value={<AnimatedNumber value={dashboard.totalStockValue} prefix="₹" />}
               icon={<IndianRupee size={20} />}
-              color="bg-violet-500"
+              color="bg-sky-600"
               subtitle="At purchase price"
             />
           </div>

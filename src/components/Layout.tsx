@@ -85,14 +85,14 @@ export default function Layout({ currentPage, onPageChange, children }: LayoutPr
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="app-shell min-h-screen bg-slate-50 flex">
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-slate-900 text-slate-200 flex flex-col transition-transform duration-300 ${
+        className={`app-sidebar fixed lg:sticky top-0 left-0 z-40 h-screen w-64 bg-slate-900 text-slate-200 flex flex-col transition-transform duration-300 ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700">
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
           <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-950 flex items-center justify-center">
             <img src={logoSrc} alt="Vaishnavi Marble logo" className="w-full h-full object-cover" />
           </div>
@@ -110,9 +110,9 @@ export default function Layout({ currentPage, onPageChange, children }: LayoutPr
               <button
                 key={item.id}
                 onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                   isActive
-                    ? 'bg-amber-600 text-white'
+                    ? 'active bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-900/20'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
               >
@@ -146,7 +146,7 @@ export default function Layout({ currentPage, onPageChange, children }: LayoutPr
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-slate-900 text-white sticky top-0 z-20">
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 bg-gradient-to-r from-slate-950 to-slate-800 text-white sticky top-0 z-20 shadow-lg">
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="w-6 h-6" />
           </button>
@@ -157,7 +157,7 @@ export default function Layout({ currentPage, onPageChange, children }: LayoutPr
           <div className="w-6" />
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-x-hidden">{children}</main>
+        <main className="relative flex-1 p-4 lg:p-7 overflow-x-hidden">{children}</main>
       </div>
     </div>
   );

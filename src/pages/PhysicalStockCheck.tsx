@@ -341,7 +341,7 @@ export default function PhysicalStockCheck() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {selectedCheck.items.map((item) => (
-                      <tr key={item.id} className={item.applied ? 'bg-green-50' : ''}>}
+                      <tr key={item.id} className={item.applied ? 'bg-green-50' : ''}>
                         <td className="px-3 py-2 text-slate-900">{item.products?.name}</td>
                         <td className="px-3 py-2 text-right text-slate-600">{item.system_stock}</td>
                         <td className="px-3 py-2 text-right text-slate-900 font-medium">{item.physical_stock}</td>

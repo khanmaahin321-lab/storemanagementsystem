@@ -143,7 +143,7 @@ export default function Inventory() {
   }, []);
 
   useEffect(() => {
-    if (tab === 'stock' || tab === 'physical' || tab === 'adjust' || tab === 'stockin') loadProducts();
+    if (tab === 'stock' || tab === 'physical') loadProducts();
     else if (tab === 'movements') loadMovements();
     else if (tab === 'sales_return' || tab === 'purchase_return') loadProducts();
   }, [tab, loadProducts, loadMovements]);

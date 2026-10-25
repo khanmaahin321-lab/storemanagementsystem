@@ -20,7 +20,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className={`relative w-full ${sizeClass} bg-white rounded-xl shadow-2xl my-8`}>
+      <div className={`ui-card relative w-full ${sizeClass} bg-white rounded-2xl shadow-2xl my-8`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
@@ -40,30 +40,33 @@ type CardProps = {
 
 export function Card({ children, className = '' }: CardProps) {
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-slate-200 ${className}`}>
+    <div className={`ui-card bg-white rounded-2xl shadow-sm border border-slate-200/80 ${className}`}>
       {children}
     </div>
   );
 }
 
 type StatCardProps = {
-  label: string;
-  value: string;
+  label?: string;
+  title?: string;
+  value: ReactNode;
   icon: ReactNode;
   color?: string;
   trend?: string;
+  subtitle?: string;
 };
 
-export function StatCard({ label, value, icon, color = 'bg-blue-500', trend }: StatCardProps) {
+export function StatCard({ label, title, value, icon, color = 'bg-blue-500', trend, subtitle }: StatCardProps) {
   return (
-    <Card className="p-5 stat-card-hover">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-slate-500 font-medium">{label}</p>
-          <p className="text-2xl font-bold text-slate-900 mt-1">{value}</p>
-          {trend && <p className="text-xs text-slate-400 mt-1">{trend}</p>}
+    <Card className="stat-card-hover relative overflow-hidden p-5">
+      <div className="stat-card-glow" />
+      <div className="relative flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label || title}</p>
+          <p className="mt-2 text-2xl font-extrabold tracking-tight text-slate-950">{value}</p>
+          {(trend || subtitle) && <p className="mt-1 text-xs font-medium text-slate-400">{trend || subtitle}</p>}
         </div>
-        <div className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center text-white stat-icon-hover`}>
+        <div className={`stat-icon w-12 h-12 shrink-0 rounded-2xl ${color} flex items-center justify-center text-white shadow-lg`}>
           {icon}
         </div>
       </div>
@@ -80,7 +83,7 @@ export function Input({ label, className = '', ...props }: InputProps) {
     <div>
       {label && <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>}
       <input
-        className={`w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent ${className}`}
+        className={`ui-field w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 ${className}`}
         {...props}
       />
     </div>
@@ -97,7 +100,7 @@ export function Select({ label, className = '', children, ...props }: SelectProp
     <div>
       {label && <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>}
       <select
-        className={`w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent bg-white ${className}`}
+        className={`ui-field w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 bg-white ${className}`}
         {...props}
       >
         {children}
@@ -115,7 +118,7 @@ export function Textarea({ label, className = '', ...props }: TextareaProps) {
     <div>
       {label && <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>}
       <textarea
-        className={`w-full px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent ${className}`}
+        className={`ui-field w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 ${className}`}
         {...props}
       />
     </div>
@@ -136,10 +139,10 @@ export function Button({
   ...props
 }: ButtonProps) {
   const variants = {
-    primary: 'bg-amber-600 text-white hover:bg-amber-700',
-    secondary: 'bg-slate-200 text-slate-700 hover:bg-slate-300',
-    danger: 'bg-red-500 text-white hover:bg-red-600',
-    ghost: 'text-slate-600 hover:bg-slate-100',
+    primary: 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-500/20 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-500/30',
+    secondary: 'bg-slate-100 text-slate-700 hover:-translate-y-0.5 hover:bg-slate-200',
+    danger: 'bg-gradient-to-r from-rose-500 to-red-500 text-white shadow-md shadow-rose-500/20 hover:-translate-y-0.5 hover:shadow-lg',
+    ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-950',
   };
   const sizes = {
     sm: 'px-3 py-1.5 text-xs',
@@ -148,7 +151,7 @@ export function Button({
   };
   return (
     <button
-      className={`rounded-lg font-medium transition-colors ${variants[variant]} ${sizes[size]} ${className}`}
+      className={`rounded-xl font-semibold transition-all duration-200 ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {children}
@@ -159,9 +162,10 @@ export function Button({
 type BadgeProps = {
   children: ReactNode;
   color?: 'green' | 'red' | 'amber' | 'blue' | 'slate';
+  className?: string;
 };
 
-export function Badge({ children, color = 'slate' }: BadgeProps) {
+export function Badge({ children, color = 'slate', className = '' }: BadgeProps) {
   const colors = {
     green: 'bg-green-100 text-green-700',
     red: 'bg-red-100 text-red-700',
@@ -170,7 +174,7 @@ export function Badge({ children, color = 'slate' }: BadgeProps) {
     slate: 'bg-slate-100 text-slate-700',
   };
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[color]}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[color]} ${className}`}>
       {children}
     </span>
   );
