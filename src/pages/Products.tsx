@@ -256,23 +256,16 @@ export default function Products() {
 
       {/* Add/Edit Modal */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Product' : 'Add Product'} size="xl">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div className="sm:col-span-2">
-            <Input label="Product Name *" value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input label="Product Name *" value={form.name || ''} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Carrara White Marble" />
           </div>
-          <Input label="SKU" value={form.sku || ''} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Auto-generated" />
           <Select label="Category" value={form.category_id || ''} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
             <option value="">Select category</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </Select>
-          <Input label="Brand" value={form.brand || ''} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
-          <Input label="Model" value={form.model || ''} onChange={(e) => setForm({ ...form, model: e.target.value })} />
-          <Input label="Color" value={form.color || ''} onChange={(e) => setForm({ ...form, color: e.target.value })} />
-          <Input label="Finish" value={form.finish || ''} onChange={(e) => setForm({ ...form, finish: e.target.value })} />
-          <Input label="Size" value={form.size || ''} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder='e.g. 2x2 ft' />
-          <Input label="Thickness" value={form.thickness || ''} onChange={(e) => setForm({ ...form, thickness: e.target.value })} placeholder='e.g. 15mm' />
           <Select label="Unit" value={form.unit || 'sq.ft'} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
             <option value="sq.ft">sq.ft</option>
             <option value="sq.m">sq.m</option>
@@ -285,20 +278,29 @@ export default function Products() {
           </Select>
           <Input label="Purchase Price" type="number" value={form.purchase_price ?? ''} onChange={(e) => setForm({ ...form, purchase_price: Number(e.target.value) })} />
           <Input label="Selling Price" type="number" value={form.selling_price ?? ''} onChange={(e) => setForm({ ...form, selling_price: Number(e.target.value) })} />
-          <Input label="Wholesale Price" type="number" value={form.wholesale_price ?? ''} onChange={(e) => setForm({ ...form, wholesale_price: Number(e.target.value) })} />
-          <Input label="GST %" type="number" value={form.gst_percent ?? ''} onChange={(e) => setForm({ ...form, gst_percent: Number(e.target.value) })} />
-          <Select label="Supplier" value={form.supplier_id || ''} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
-            <option value="">Select supplier</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </Select>
-          {!editing && (
-            <Input label="Opening Stock" type="number" value={form.opening_stock ?? ''} onChange={(e) => setForm({ ...form, opening_stock: Number(e.target.value) })} />
+          {!editing && <Input label="Opening Stock" type="number" value={form.opening_stock ?? ''} onChange={(e) => setForm({ ...form, opening_stock: Number(e.target.value) })} />}
+          <Input label="Minimum Stock Alert" type="number" value={form.minimum_stock ?? ''} onChange={(e) => setForm({ ...form, minimum_stock: Number(e.target.value) })} />
+          {!editing && <Input label="GST %" type="number" value={form.gst_percent ?? ''} onChange={(e) => setForm({ ...form, gst_percent: Number(e.target.value) })} />}
+
+          {editing && (
+            <>
+              <Input label="SKU" value={form.sku || ''} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="Auto-generated" />
+              <Input label="Brand" value={form.brand || ''} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
+              <Input label="Model" value={form.model || ''} onChange={(e) => setForm({ ...form, model: e.target.value })} />
+              <Input label="Color" value={form.color || ''} onChange={(e) => setForm({ ...form, color: e.target.value })} />
+              <Input label="Finish" value={form.finish || ''} onChange={(e) => setForm({ ...form, finish: e.target.value })} />
+              <Input label="Size" value={form.size || ''} onChange={(e) => setForm({ ...form, size: e.target.value })} placeholder="e.g. 2x2 ft" />
+              <Input label="Thickness" value={form.thickness || ''} onChange={(e) => setForm({ ...form, thickness: e.target.value })} placeholder="e.g. 15mm" />
+              <Input label="Wholesale Price" type="number" value={form.wholesale_price ?? ''} onChange={(e) => setForm({ ...form, wholesale_price: Number(e.target.value) })} />
+              <Input label="GST %" type="number" value={form.gst_percent ?? ''} onChange={(e) => setForm({ ...form, gst_percent: Number(e.target.value) })} />
+              <Select label="Supplier" value={form.supplier_id || ''} onChange={(e) => setForm({ ...form, supplier_id: e.target.value })}>
+                <option value="">Select supplier</option>
+                {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </Select>
+              <Input label="Barcode" value={form.barcode || ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
+              <Input label="Image URL" value={form.image_url || ''} onChange={(e) => setForm({ ...form, image_url: e.target.value })} />
+            </>
           )}
-          <Input label="Minimum Stock" type="number" value={form.minimum_stock ?? ''} onChange={(e) => setForm({ ...form, minimum_stock: Number(e.target.value) })} />
-          <Input label="Barcode" value={form.barcode || ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
-          <Input label="Image URL" value={form.image_url || ''} onChange={(e) => setForm({ ...form, image_url: e.target.value })} />
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>

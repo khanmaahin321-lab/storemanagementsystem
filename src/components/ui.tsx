@@ -18,9 +18,9 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
     xl: 'max-w-4xl',
   }[size];
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/35 p-2 backdrop-blur-sm sm:p-4">
       <div className="fixed inset-0 bg-black/50" onClick={onClose} />
-      <div className={`ui-card relative w-full ${sizeClass} bg-white rounded-2xl shadow-2xl my-8`}>
+      <div className={`ui-card relative my-2 max-h-[calc(100vh-1rem)] w-full overflow-y-auto ${sizeClass} rounded-2xl bg-white shadow-2xl sm:my-8 sm:max-h-[calc(100vh-4rem)]`}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
           <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600">

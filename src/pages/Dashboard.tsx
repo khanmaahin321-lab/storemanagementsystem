@@ -342,17 +342,17 @@ export default function Dashboard() {
 
         supabase
           .from('products')
-          .select('id,name,unit,stock_quantity,min_stock,purchase_price,selling_price')
+          .select('id,name,unit,current_stock,minimum_stock,purchase_price,selling_price')
           .order('name')
           .limit(1000),
 
-        supabase.from('customers').select('id,current_balance').limit(1000),
+        supabase.from('customers').select('id,outstanding_balance').limit(1000),
 
-        supabase.from('suppliers').select('id,current_balance').limit(1000),
+        supabase.from('suppliers').select('id,outstanding_balance').limit(1000),
 
         supabase
           .from('sales')
-          .select('id,invoice_number,customer_name,total_amount,amount_paid,payment_method,created_at')
+          .select('id,invoice_number,total_amount,amount_paid,payment_method,created_at,customers(name)')
           .order('created_at', { ascending: false })
           .limit(100),
 
@@ -366,7 +366,7 @@ export default function Dashboard() {
         supabase
           .from('products')
           .select('id,name,unit,stock_quantity,min_stock,selling_price,purchase_price')
-          .lte('stock_quantity', 0)
+          .lte('current_stock', 0)
           .order('name')
           .limit(100),
 
@@ -469,12 +469,12 @@ export default function Dashboard() {
       );
 
       const customerDues = (customers.data || []).reduce(
-        (sum: number, customer: any) => sum + Math.max(Number(customer.current_balance) || 0, 0),
+        (sum: number, customer: any) => sum + Math.max(Number(customer.outstanding_balance) || 0, 0),
         0
       );
 
       const supplierDues = (suppliers.data || []).reduce(
-        (sum: number, supplier: any) => sum + Math.max(Number(supplier.current_balance) || 0, 0),
+        (sum: number, supplier: any) => sum + Math.max(Number(supplier.outstanding_balance) || 0, 0),
         0
       );
 
@@ -530,15 +530,15 @@ export default function Dashboard() {
 
       const lowStockProducts = productRows
         .filter((product: any) => {
-          const stock = Number(product.stock_quantity) || 0;
-          const minimum = Number(product.min_stock) || 0;
+          const stock = Number(product.current_stock) || 0;
+          const minimum = Number(product.minimum_stock) || 0;
           return stock > 0 && stock <= minimum;
         })
-        .sort((a: any, b: any) => (Number(a.stock_quantity) || 0) - (Number(b.stock_quantity) || 0))
+        .sort((a: any, b: any) => (Number(a.current_stock) || 0) - (Number(b.current_stock) || 0))
         .slice(0, 100);
 
       const totalStockValue = productRows.reduce((sum: number, product: any) => {
-        const stock = Number(product.stock_quantity) || 0;
+        const stock = Number(product.current_stock) || 0;
         const purchasePrice = Number(product.purchase_price) || 0;
         return sum + stock * purchasePrice;
       }, 0);
@@ -904,7 +904,7 @@ export default function Dashboard() {
                         </div>
 
                         <p className="mt-0.5 truncate text-xs text-slate-500">
-                          {sale.customer_name || 'Walk-in Customer'} • {formatDate(sale.created_at)}
+                          {sale.customers?.name || 'Walk-in Customer'} • {formatDate(sale.created_at)}
                         </p>
                       </div>
 
@@ -954,8 +954,8 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   dashboard.lowStockProducts.slice(0, 8).map((product: any) => {
-                    const stock = Number(product.stock_quantity) || 0;
-                    const minimum = Math.max(Number(product.min_stock) || 1, 1);
+                    const stock = Number(product.current_stock) || 0;
+                    const minimum = Math.max(Number(product.minimum_stock) || 1, 1);
                     const percentage = Math.min((stock / minimum) * 100, 100);
 
                     return (
@@ -1136,7 +1136,7 @@ export default function Dashboard() {
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-xs text-slate-500">Customer</p>
               <p className="mt-1 text-sm font-bold text-slate-900">
-                {selectedSale.customer_name || 'Walk-in Customer'}
+                {selectedSale.customers?.name || 'Walk-in Customer'}
               </p>
             </div>
             <div className="rounded-xl bg-slate-50 p-3">
@@ -1281,14 +1281,14 @@ export default function Dashboard() {
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs text-slate-500">Current Stock</p>
                 <p className="mt-1 text-lg font-extrabold text-red-600">
-                  {Number(selectedOutOfStock.stock_quantity) || 0} {selectedOutOfStock.unit || ''}
+                  {Number(selectedOutOfStock.current_stock) || 0} {selectedOutOfStock.unit || ''}
                 </p>
               </div>
 
               <div className="rounded-xl bg-slate-50 p-4">
                 <p className="text-xs text-slate-500">Minimum Stock</p>
                 <p className="mt-1 text-lg font-extrabold text-slate-900">
-                  {Number(selectedOutOfStock.min_stock) || 0} {selectedOutOfStock.unit || ''}
+                  {Number(selectedOutOfStock.minimum_stock) || 0} {selectedOutOfStock.unit || ''}
                 </p>
               </div>
             </div>

@@ -349,10 +349,10 @@ export default function Reports() {
       case 'stock_valuation': return ['Product', 'SKU', 'Category', 'Stock', 'Unit', 'Purchase Value', 'Sell Value'];
       case 'lowstock': return ['Product', 'SKU', 'Current', 'Minimum', 'Unit'];
       case 'outofstock': return ['Product', 'SKU', 'Category', 'Unit'];
-      case 'stock_movement': return ['Date', 'Product', 'Type', 'Qty', 'Unit', 'Reason', 'User'];
-      case 'stock_in': return ['Date', 'Product', 'Qty', 'Unit', 'Supplier', 'Reference'];
-      case 'stock_out': return ['Date', 'Product', 'Qty', 'Unit', 'Customer', 'Reference'];
-      case 'stock_adjustment': return ['Date', 'Product', 'Type', 'Qty', 'Unit', 'Reason', 'User'];
+      case 'stock_movement': return ['Date', 'Product', 'Type', 'Qty', 'Reason', 'User'];
+      case 'stock_in': return ['Date', 'Product', 'Qty', 'Supplier', 'Reference'];
+      case 'stock_out': return ['Date', 'Product', 'Qty', 'Customer', 'Reference'];
+      case 'stock_adjustment': return ['Date', 'Product', 'Type', 'Qty', 'Reason', 'User'];
       case 'stock_ledger': return ['Date', 'Product', 'Type', 'Qty In', 'Qty Out', 'Balance', 'Rate', 'Value', 'Party'];
       case 'sales_return': return ['Return #', 'Date', 'Customer', 'Product', 'Qty', 'Rate', 'Total', 'Reason'];
       case 'purchase_return': return ['Return #', 'Date', 'Supplier', 'Product', 'Qty', 'Rate', 'Total', 'Reason'];
@@ -543,7 +543,7 @@ export default function Reports() {
       </div>
 
       {/* Report type selector */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
         {reportOptions.map((opt) => {
           const Icon = opt.icon;
           const isActive = reportType === opt.value;
@@ -551,7 +551,7 @@ export default function Reports() {
             <button
               key={opt.value}
               onClick={() => setReportType(opt.value)}
-              className={`flex items-center gap-2 p-3 rounded-lg border text-sm font-medium transition-all ${
+              className={`flex min-h-12 items-center gap-2 rounded-xl border p-3 text-left text-xs font-semibold transition-all sm:text-sm ${
                 isActive ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
               }`}
             >
