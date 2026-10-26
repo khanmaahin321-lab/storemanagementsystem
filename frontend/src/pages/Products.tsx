@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Package,
   Plus,
@@ -11,6 +12,11 @@ import {
   TrendingUp,
   TrendingDown,
   History,
+  Upload,
+  FileSpreadsheet,
+  Download,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Product, Category, Supplier, StockMovement } from '@/lib/supabase';
@@ -36,6 +42,11 @@ export default function Products() {
   const [stockProduct, setStockProduct] = useState<ProductWithRelations | null>(null);
   const [stockMovements, setStockMovements] = useState<(StockMovement & { products?: { name: string; unit: string } | null })[]>([]);
   const [adjustForm, setAdjustForm] = useState({ type: 'adjustment_in', quantity: 0, reason: 'Physical Stock Correction', notes: '' });
+  const [importModal, setImportModal] = useState(false);
+  const [importPreview, setImportPreview] = useState<{ rows: Record<string, unknown>[]; headers: string[] } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ added: number; errors: string[] } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
@@ -125,6 +136,128 @@ export default function Products() {
     setStockMovements((data || []) as (StockMovement & { products?: { name: string; unit: string } | null })[]);
   }
 
+  const HEADER_MAP: Record<string, keyof typeof importTemplate> = {
+    name: 'name', product: 'name', 'product name': 'name',
+    category: 'category', 'category name': 'category',
+    sku: 'sku', code: 'sku',
+    brand: 'brand', model: 'model', color: 'color', finish: 'finish',
+    size: 'size', thickness: 'thickness', unit: 'unit',
+    'purchase price': 'purchase_price', 'cost price': 'purchase_price', cost: 'purchase_price',
+    'selling price': 'selling_price', 'sale price': 'selling_price', price: 'selling_price',
+    'wholesale price': 'wholesale_price',
+    'gst %': 'gst_percent', gst: 'gst_percent', 'gst percent': 'gst_percent',
+    'opening stock': 'opening_stock', stock: 'opening_stock', quantity: 'opening_stock',
+    'minimum stock': 'minimum_stock', 'min stock': 'minimum_stock', reorder: 'minimum_stock',
+    barcode: 'barcode',
+  };
+
+  const importTemplate = {
+    name: '', category: '', sku: '', brand: '', model: '', color: '', finish: '',
+    size: '', thickness: '', unit: 'sq.ft',
+    purchase_price: 0, selling_price: 0, wholesale_price: 0, gst_percent: 18,
+    opening_stock: 0, minimum_stock: 0, barcode: '',
+  };
+
+  async function handleFile(file: File) {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+    if (!rows.length) {
+      setImportResult({ added: 0, errors: ['The file is empty or has no data rows.'] });
+      return;
+    }
+    const rawHeaders = Object.keys(rows[0]);
+    const headers: string[] = [];
+    const mapped: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      const obj: Record<string, unknown> = {};
+      for (const h of rawHeaders) {
+        const key = HEADER_MAP[h.toLowerCase().trim()] || h.toLowerCase().trim();
+        obj[key] = row[h];
+      }
+      mapped.push(obj);
+    }
+    const seen = new Set<string>();
+    for (const h of rawHeaders) {
+      const key = HEADER_MAP[h.toLowerCase().trim()] || h.toLowerCase().trim();
+      if (!seen.has(key)) { seen.add(key); headers.push(key); }
+    }
+    setImportPreview({ rows: mapped, headers });
+    setImportResult(null);
+  }
+
+  function downloadTemplate() {
+    const sample = [
+      { Name: 'Carrara White Marble', Category: 'Marble', SKU: '', Brand: '', Model: '', Color: 'White', Finish: 'Polished', Size: '2x2 ft', Thickness: '15mm', Unit: 'sq.ft', 'Purchase Price': 120, 'Selling Price': 180, 'Wholesale Price': 160, 'GST %': 18, 'Opening Stock': 50, 'Minimum Stock': 10, Barcode: '' },
+      { Name: 'Black Galaxy Granite', Category: 'Granite', SKU: '', Brand: '', Model: '', Color: 'Black', Finish: 'Honed', Size: '3x3 ft', Thickness: '20mm', Unit: 'sq.ft', 'Purchase Price': 250, 'Selling Price': 380, 'Wholesale Price': 340, 'GST %': 18, 'Opening Stock': 25, 'Minimum Stock': 5, Barcode: '' },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Products');
+    XLSX.writeFile(wb, 'products_import_template.xlsx');
+  }
+
+  async function runImport() {
+    if (!importPreview) return;
+    setImporting(true);
+    const errors: string[] = [];
+    let added = 0;
+    const catMap = new Map<string, string>();
+    (categories || []).forEach((c) => catMap.set(c.name.toLowerCase(), c.id));
+    const newCats: string[] = [];
+    for (const row of importPreview.rows) {
+      const catName = String(row.category || '').trim();
+      if (catName && !catMap.has(catName.toLowerCase())) newCats.push(catName);
+    }
+    for (const name of newCats) {
+      const { data, error } = await supabase.from('categories').insert({ name }).select().single();
+      if (error) { errors.push(`Could not create category "${name}"`); continue; }
+      catMap.set(name.toLowerCase(), data.id);
+      setCategories((prev) => [...prev, data as Category]);
+    }
+    for (let i = 0; i < importPreview.rows.length; i++) {
+      const row = importPreview.rows[i];
+      const name = String(row.name || '').trim();
+      if (!name) { errors.push(`Row ${i + 2}: missing product name`); continue; }
+      const catName = String(row.category || '').trim();
+      const category_id = catName ? catMap.get(catName.toLowerCase()) || null : null;
+      const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+      const str = (v: unknown) => (v === '' || v == null ? '' : String(v));
+      const sku = str(row.sku) || generateSKU(name, catName || 'PRD');
+      const product = {
+        name,
+        sku,
+        category_id,
+        brand: str(row.brand) || null,
+        model: str(row.model) || null,
+        color: str(row.color) || null,
+        finish: str(row.finish) || null,
+        size: str(row.size) || null,
+        thickness: str(row.thickness) || null,
+        unit: str(row.unit) || 'sq.ft',
+        purchase_price: num(row.purchase_price),
+        selling_price: num(row.selling_price),
+        wholesale_price: num(row.wholesale_price),
+        gst_percent: num(row.gst_percent) || 18,
+        opening_stock: num(row.opening_stock),
+        current_stock: num(row.opening_stock),
+        minimum_stock: num(row.minimum_stock),
+        barcode: str(row.barcode) || null,
+        is_active: true,
+      };
+      const { error } = await supabase.from('products').insert(product);
+      if (error) {
+        errors.push(`Row ${i + 2} (${name}): ${error.message}`);
+        continue;
+      }
+      added++;
+    }
+    setImporting(false);
+    setImportResult({ added, errors });
+    if (added > 0) loadProducts();
+  }
+
   async function saveStockAdjust() {
     if (!stockProduct || adjustForm.quantity <= 0) return;
     const isAdd = adjustForm.type === 'adjustment_in';
@@ -157,10 +290,16 @@ export default function Products() {
           <h1 className="text-2xl font-bold text-slate-900">Products</h1>
           <p className="text-sm text-slate-500 mt-1">Manage your product catalog</p>
         </div>
-        <Button onClick={openAdd}>
-          <Plus className="w-4 h-4 inline mr-1" />
-          Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => { setImportModal(true); setImportPreview(null); setImportResult(null); }}>
+            <Upload className="w-4 h-4 inline mr-1" />
+            Import from Excel
+          </Button>
+          <Button onClick={openAdd}>
+            <Plus className="w-4 h-4 inline mr-1" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -305,6 +444,105 @@ export default function Products() {
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={save}>{editing ? 'Update' : 'Add'} Product</Button>
+        </div>
+      </Modal>
+
+      {/* Excel Import Modal */}
+      <Modal open={importModal} onClose={() => setImportModal(false)} title="Import Products from Excel" size="lg">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
+            <FileSpreadsheet className="w-5 h-5 shrink-0" />
+            <div>
+              <p className="font-medium">Upload an .xlsx or .csv file</p>
+              <p className="text-blue-600">Columns: Name, Category, SKU, Brand, Purchase Price, Selling Price, Opening Stock, etc.</p>
+            </div>
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+              e.target.value = '';
+            }}
+          />
+
+          {!importPreview && !importResult && (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button onClick={() => fileRef.current?.click()}>
+                <Upload className="w-4 h-4 inline mr-1" />
+                Choose Excel File
+              </Button>
+              <Button variant="secondary" onClick={downloadTemplate}>
+                <Download className="w-4 h-4 inline mr-1" />
+                Download Template
+              </Button>
+            </div>
+          )}
+
+          {importPreview && !importResult && (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-600">
+                Found <span className="font-bold text-slate-900">{importPreview.rows.length}</span> rows.
+                Missing categories will be created automatically.
+              </p>
+              <div className="max-h-72 overflow-auto border border-slate-200 rounded-lg">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 text-slate-600 sticky top-0">
+                    <tr>
+                      {importPreview.headers.map((h) => (
+                        <th key={h} className="text-left px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {importPreview.rows.slice(0, 50).map((r, i) => (
+                      <tr key={i}>
+                        {importPreview.headers.map((h) => (
+                          <td key={h} className="px-3 py-1.5 text-slate-700 whitespace-nowrap">{String(r[h] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {importPreview.rows.length > 50 && <p className="text-xs text-slate-400">Showing first 50 of {importPreview.rows.length} rows</p>}
+              <div className="flex justify-end gap-3">
+                <Button variant="secondary" onClick={() => setImportPreview(null)}>Cancel</Button>
+                <Button onClick={runImport} disabled={importing}>
+                  {importing ? 'Importing...' : `Import ${importPreview.rows.length} Products`}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {importResult && (
+            <div className="space-y-3">
+              <div className={`p-4 rounded-lg ${importResult.added > 0 ? 'bg-green-50' : 'bg-amber-50'}`}>
+                <div className="flex items-center gap-2">
+                  {importResult.added > 0 ? <CheckCircle2 className="w-5 h-5 text-green-600" /> : <XCircle className="w-5 h-5 text-amber-600" />}
+                  <p className="font-bold text-slate-900">{importResult.added} product(s) imported successfully</p>
+                </div>
+                {importResult.errors.length > 0 && (
+                  <p className="text-sm text-amber-700 mt-1">{importResult.errors.length} row(s) had errors.</p>
+                )}
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="max-h-48 overflow-auto border border-rose-200 rounded-lg p-3 bg-rose-50">
+                  <ul className="text-xs text-rose-700 space-y-1">
+                    {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </ul>
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <Button variant="secondary" onClick={() => { setImportModal(false); setImportResult(null); setImportPreview(null); }}>Close</Button>
+                <Button onClick={() => { setImportPreview(null); setImportResult(null); fileRef.current?.click(); }}>Import Another File</Button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
